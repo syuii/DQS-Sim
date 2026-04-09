@@ -1,0 +1,20 @@
+{
+  "graph_type": "star",
+  "graph_nodes": 11,
+  "graph_edges": 10,
+  "max_degree": 10,
+  "code_distance": 7,
+  "mis_size": 10,
+  "nodes_measured_case1": 1,
+  "tocks_case1": 1,
+  "peak_ancilla_ELUs_case1": 1,
+  "chromatic_index": 10,
+  "tocks_case2": 20,
+  "vizing_class": 1,
+  "peak_ancilla_ELUs_case2": 1,
+  "phys_per_ELU": 97,
+  "data_ELUs": 11,
+  "total_phys_qubits_case1": 1164,
+  "total_phys_qubits_case2": 1164,
+  "tock_ratio_c2_c1": 20.0
+}

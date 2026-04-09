@@ -1,0 +1,20 @@
+{
+  "graph_type": "path",
+  "graph_nodes": 10,
+  "graph_edges": 9,
+  "max_degree": 2,
+  "code_distance": 7,
+  "mis_size": 5,
+  "nodes_measured_case1": 5,
+  "tocks_case1": 2,
+  "peak_ancilla_ELUs_case1": 3,
+  "chromatic_index": 2,
+  "tocks_case2": 4,
+  "vizing_class": 1,
+  "peak_ancilla_ELUs_case2": 5,
+  "phys_per_ELU": 97,
+  "data_ELUs": 10,
+  "total_phys_qubits_case1": 1261,
+  "total_phys_qubits_case2": 1455,
+  "tock_ratio_c2_c1": 2.0
+}
