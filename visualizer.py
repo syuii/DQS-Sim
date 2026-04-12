@@ -673,6 +673,177 @@ def show_comparison_dashboard(
 # ============================================================================
 # Shared save/show helper
 # ============================================================================
+# Qubit Occupancy  (per-tock tile strip, restored from original notebook)
+# ============================================================================
+
+def _draw_occupancy_tiles(
+    ax:       plt.Axes,
+    tock:     list,
+    mapping:  dict,
+    n_q:      int,
+    tock_idx: int,
+    palette:  list[str],
+) -> None:
+    """
+    Draw the ancilla (top) and data (bottom) tile strips for one tock.
+    Idle tiles are light grey; active tiles are coloured per measurement.
+    """
+    ax.set_xlim(-0.6, n_q)
+    ax.set_ylim(-0.3, 2.8)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.set_title(f"Tock {tock_idx + 1} — Qubit Occupancy",
+                 fontsize=11, fontweight="bold", pad=8)
+
+    # Row labels
+    ax.text(-0.3, 2.0, "Ancilla", ha="right", va="center",
+            fontsize=10, color="#555", fontweight="bold")
+    ax.text(-0.3, 0.5, "Data",    ha="right", va="center",
+            fontsize=10, color="#555", fontweight="bold")
+
+    # Idle tiles
+    for q in range(n_q):
+        for row_y, prefix in [(1.5, "A"), (0.0, "Q")]:
+            ax.add_patch(plt.Rectangle(
+                (q, row_y), 1, 1,
+                facecolor="#fafafa", edgecolor="#dddddd", linewidth=0.8,
+            ))
+            ax.text(q + 0.5, row_y + 0.5, f"{prefix}{q}",
+                    ha="center", va="center", fontsize=8, color="#bbbbbb")
+
+    # Active tiles — one colour per measurement in this tock
+    for bi, b in enumerate(tock):
+        col      = palette[bi % len(palette)]
+        L, R     = b["L"], b["R"]
+        involved = [mapping[b["id"]]] + [mapping[nb] for nb in b["neighbors"]]
+
+        for q in range(L, R + 1):          # ancilla span
+            ax.add_patch(plt.Rectangle(
+                (q, 1.5), 1, 1,
+                facecolor=col, edgecolor="white", linewidth=1.5, alpha=0.88,
+            ))
+            ax.text(q + 0.5, 2.0, f"A{q}",
+                    ha="center", va="center",
+                    fontsize=8, fontweight="bold", color="white")
+
+        for q in involved:                 # data qubits
+            ax.add_patch(plt.Rectangle(
+                (q, 0.0), 1, 1,
+                facecolor=col, edgecolor="white", linewidth=1.5, alpha=0.88,
+            ))
+            ax.text(q + 0.5, 0.5, f"Q{q}",
+                    ha="center", va="center",
+                    fontsize=8, fontweight="bold", color="white")
+
+
+def show_qubit_occupancy(
+    scheduler: "SubstrateScheduler",
+    save_path: str | None = None,
+) -> None:
+    """
+    Per-tock qubit occupancy figure (Case 1 — MPP).
+
+    Each row in the figure is one Tock.  Left panel = graph view with
+    X/Z roles highlighted.  Right panel = the tile strip (ancilla row on top,
+    data row on bottom) showing exactly which physical substrate positions are
+    occupied.  Restored from the original notebook visualisation.
+    """
+    n_tocks = len(scheduler.schedule)
+    if n_tocks == 0:
+        print("  No tocks to display.")
+        return
+
+    n_q   = len(scheduler.G.nodes)
+    # Scale: tile strip needs width ∝ n_q; cap the figure width sensibly
+    strip_w = max(8, min(n_q * 0.55 + 2, 28))
+    fig, axes = plt.subplots(
+        n_tocks, 2,
+        figsize=(strip_w + 7, 5.5 * n_tocks),
+        facecolor=_FIG_BG,
+        gridspec_kw={"width_ratios": [1, max(1, n_q // 6)]},
+    )
+    fig.suptitle("Qubit Occupancy per Tock  (Case 1 — MPP)",
+                 fontsize=14, fontweight="bold", y=1.01)
+
+    if n_tocks == 1:
+        axes = [axes]   # normalise to list of rows
+
+    pos = scheduler._get_pos()
+
+    for t, (row, tock) in enumerate(zip(axes, scheduler.schedule)):
+        ax_graph, ax_tiles = row
+
+        # ── Graph view ───────────────────────────────────────────────────────
+        measured  = {b["id"] for b in tock}
+        neighbors = {nb for b in tock for nb in b["neighbors"]}
+
+        node_colors = [
+            _COL_MEASURE if nd in measured  else
+            "#FFD54F"    if nd in neighbors else
+            _COL_IDLE
+            for nd in scheduler.G.nodes
+        ]
+        active_edges = [
+            (b["id"], nb) if scheduler.G.has_edge(b["id"], nb) else (nb, b["id"])
+            for b in tock for nb in b["neighbors"]
+        ]
+        all_edges  = list(scheduler.G.edges())
+        inactive   = [e for e in all_edges
+                      if e not in active_edges
+                      and (e[1], e[0]) not in active_edges]
+
+        import networkx as nx
+        nx.draw_networkx_edges(scheduler.G, pos, edgelist=inactive,
+                               width=1.2, edge_color=_COL_EDGE_OFF, ax=ax_graph)
+        nx.draw_networkx_edges(scheduler.G, pos, edgelist=active_edges,
+                               width=2.0, edge_color=_COL_MEASURE, ax=ax_graph)
+        nx.draw_networkx_nodes(scheduler.G, pos,
+                               node_size=700, node_color=node_colors,
+                               edgecolors=_COL_BORDER, linewidths=1.2,
+                               ax=ax_graph)
+
+        labels = {
+            nd: (f"{nd}\nX" if nd in measured  else
+                 f"{nd}\nZ" if nd in neighbors else str(nd))
+            for nd in scheduler.G.nodes
+        }
+        nx.draw_networkx_labels(scheduler.G, pos, labels,
+                                font_size=9, font_color="#222", ax=ax_graph)
+
+        # operator string below the graph
+        op_strs = []
+        for b in tock:
+            parts = [f"X{scheduler.mapping[b['id']]}"] + \
+                    [f"Z{scheduler.mapping[nb]}" for nb in b["neighbors"]]
+            op_strs.append(" ⊗ ".join(parts))
+        ax_graph.text(0.5, 0.02, "  |  ".join(op_strs),
+                      transform=ax_graph.transAxes,
+                      ha="center", fontsize=8, family="monospace",
+                      color="#666", zorder=3)
+
+        ax_graph.legend(
+            handles=[
+                mpatches.Patch(facecolor=_COL_MEASURE, edgecolor=_COL_BORDER,
+                               lw=1.2, label="X (measured)"),
+                mpatches.Patch(facecolor="#FFD54F",    edgecolor=_COL_BORDER,
+                               lw=1.2, label="Z (neighbour)"),
+            ],
+            fontsize=8, frameon=False, loc="upper right",
+        )
+        ax_graph.set_title(f"Tock {t + 1} — Graph View",
+                           fontsize=11, fontweight="bold", pad=8)
+        ax_graph.axis("off")
+        ax_graph.margins(0.18)
+
+        # ── Tile strip ───────────────────────────────────────────────────────
+        _draw_occupancy_tiles(ax_tiles, tock, scheduler.mapping,
+                              n_q, t, _PALETTE)
+
+    plt.tight_layout()
+    _save_or_show(fig, save_path, "qubit occupancy")
+
+
+# ============================================================================
 
 def _save_or_show(fig: plt.Figure, save_path: str | None, label: str) -> None:
     if save_path:

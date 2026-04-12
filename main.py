@@ -1,28 +1,31 @@
 """
-main.py
-=======
-CLI entry point for the graph state generation simulator.
+main.py — Graph State Generation Simulator (GoSC / Lattice Surgery)
 
-Usage examples
---------------
-    python main.py                                  # star(10), d=7, both cases
-    python main.py --graph path --n 20              # path graph, 20 nodes
-    python main.py --graph star --n 50 --gantt      # show Gantt chart
-    python main.py --graph grid --n 5 --dashboard   # 5×5 grid, comparison figure
-    python main.py --graph random --n 30 --p 0.4    # random graph, 30 nodes
-    python main.py --graph star --n 10 --visualize  # per-tock figures
-    python main.py --graph star --n 10 --export results.json
-    python main.py --case 1 --graph cycle --n 15    # Case 1 only
+Usage
+-----
+    python main.py                                       # defaults: star(10), d=7
+    python main.py --graph cycle --n 20 --case 1        # Case 1 only, cycle graph
+    python main.py --graph star  --n 10 --save-all            # saves to ./star_n10/
+    python main.py --graph star  --n 10 --save-all results/   # saves to results/star_n10/
+    python main.py --graph star  --n 10 --layout --gantt --heatmap --dashboard --occupancy  # display
+    python main.py --graph random --n 100 --no-verify   # skip verification (faster)
+
+    --save-all DIR creates DIR/{graph}_n{n}/ and writes all figures + report.json inside.
+    Omit DIR to use the current directory. Individual --save-* flags override specific paths.
+
+Graph types: path, cycle, star, complete, grid, random, petersen, hypercube
+    grid → n×n  |  hypercube → 2^n nodes  |  random → use --p for edge probability
 """
 
 import argparse
+import os
 import sys
 
 import networkx as nx
 
 from cost_estimator import compute_report
 from substrate_scheduler import CZScheduler, SubstrateScheduler
-from visualizer import show_comparison_dashboard, show_gantt, show_heatmaps, show_2d_layout
+from visualizer import show_comparison_dashboard, show_gantt, show_heatmaps, show_2d_layout, show_qubit_occupancy
 
 # ---------------------------------------------------------------------------
 # Graph builders
@@ -102,14 +105,20 @@ def make_parser() -> argparse.ArgumentParser:
                    help="Schedule heatmap: compact matrix view (works at any scale)")
     o.add_argument("--layout", action="store_true",
                    help="2D patch layout: ELUs as physical surface-code patches")
+    o.add_argument("--occupancy", action="store_true",
+                   help="Per-tock qubit occupancy tile strip (Case 1)")
     o.add_argument("--dashboard", action="store_true",
                    help="Bar-chart resource comparison (both cases)")
+    o.add_argument("--save-all", metavar="DIR", nargs="?", const=".",
+                   help="Save all figures + JSON to {graph}_n{n}/ inside DIR (default: current dir)")
     o.add_argument("--save-gantt",     metavar="FILE.png",
                    help="Save Gantt chart to file")
     o.add_argument("--save-heatmap",   metavar="FILE.png",
                    help="Save heatmap to file")
     o.add_argument("--save-layout",    metavar="FILE.png",
                    help="Save 2D patch layout to file")
+    o.add_argument("--save-occupancy", metavar="FILE.png",
+                   help="Save qubit occupancy figure to file")
     o.add_argument("--save-dashboard", metavar="FILE.png",
                    help="Save dashboard to file")
     o.add_argument("--export", metavar="FILE.json",
@@ -125,6 +134,18 @@ def make_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = make_parser().parse_args()
     verify = not args.no_verify
+
+    # --save-all: auto-create {graph}_n{n}/ and fill in any unset save paths
+    if args.save_all:
+        folder = os.path.join(args.save_all, f"{args.graph}_n{args.n}")
+        os.makedirs(folder, exist_ok=True)
+        args.save_gantt     = args.save_gantt     or os.path.join(folder, "gantt.png")
+        args.save_heatmap   = args.save_heatmap   or os.path.join(folder, "heatmap.png")
+        args.save_layout    = args.save_layout    or os.path.join(folder, "layout.png")
+        args.save_occupancy = args.save_occupancy or os.path.join(folder, "occupancy.png")
+        args.save_dashboard = args.save_dashboard or os.path.join(folder, "dashboard.png")
+        args.export         = args.export         or os.path.join(folder, "report.json")
+        print(f"  Output folder: {folder}/")
 
     G = build_graph(args.graph, args.n, args.p)
     print(f"\n  Graph: {args.graph}(n={args.n})  "
@@ -176,10 +197,13 @@ def main() -> None:
         if args.layout or args.save_layout:
             show_2d_layout(scheduler, cz, save_path=args.save_layout)
 
+        if args.occupancy or args.save_occupancy:
+            show_qubit_occupancy(scheduler, save_path=args.save_occupancy)
+
         if args.dashboard or args.save_dashboard:
             show_comparison_dashboard(report, save_path=args.save_dashboard)
 
-    elif args.gantt or args.heatmap or args.layout or args.dashboard:
+    elif args.gantt or args.heatmap or args.layout or args.occupancy or args.dashboard:
         print(
             "\n  Note: visualisation flags require both cases "
             "(use --case both, which is the default)."
