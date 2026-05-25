@@ -23,10 +23,10 @@ import sys
 
 import networkx as nx
 
-from cost_estimator import compute_report
-from substrate_scheduler import CZScheduler, CZSchedulerFixedAncilla, SubstrateScheduler
-from visualizer import (show_comparison_dashboard, show_gantt, show_heatmaps,
-                        show_2d_layout, show_qubit_occupancy, show_qubit_occupancy_case3)
+from dqs_sim.cost import compute_report
+from dqs_sim.schedulers import CZScheduler, CZSchedulerFixedAncilla, SubstrateScheduler
+from dqs_sim.visualizer import (show_comparison_dashboard, show_gantt, show_heatmaps,
+                                show_2d_layout, show_qubit_occupancy, show_qubit_occupancy_case3)
 
 
 # Graph builders
