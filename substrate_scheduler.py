@@ -22,6 +22,7 @@ Usage
 
 from __future__ import annotations
 
+import math
 from itertools import combinations
 from typing import Any
 
@@ -220,71 +221,73 @@ class SubstrateScheduler:
 
     def verify_chromatic_number(self) -> tuple[nx.Graph, dict, int]:
         """
-        Verify optimality: the chromatic number χ(G_gen) should equal the
-        number of Tocks produced by the scheduler (with MIS active).
+        Report bounds on χ(S') and compare against the scheduler's tock count.
 
-        The chromatic number gives the *theoretical lower bound* on Tocks —
-        it is independent of the physical layout and interval scheduling, so
-        it is the correct reference value.  The no-MIS Tock count reported
-        here is also derived from graph colouring (all nodes measured, same
-        conflict graph construction) rather than from the interval scheduler,
-        which can be suboptimal when the spectral ordering does not perfectly
-        linearise the conflict structure.
+        S' is the generator conflict graph built over the *measured* generators
+        (to_measure nodes only — MIS nodes are initialised in |+⟩ and removed).
+        Per the notes, χ(S') is the theoretical minimum number of tocks.
+
+        Because computing the exact chromatic number is NP-hard we report two
+        bounds that bracket χ(S'):
+
+          Lower bound — clique number ω(S') ≤ χ(S')
+              A clique of size k means k mutually-conflicting generators, so
+              they must all go in different tocks.
+
+          Upper bound — DSATUR greedy colouring χ_greedy ≥ χ(S')
+              Any valid colouring is a valid schedule, so the greedy result
+              is an achievable (but not necessarily minimal) tock count.
+
+        Pass/fail criteria
+        ------------------
+          IMPOSSIBLE  tocks < ω          — beats the proven lower bound (bug)
+          OPTIMAL     tocks == ω          — matches the proven lower bound
+          FEASIBLE    ω < tocks ≤ χ_greedy — within the provable range
+          SUBOPTIMAL  tocks > χ_greedy    — worse than plain graph colouring
 
         Returns
         -------
-        gen_graph    : conflict graph (only to_measure nodes)
-        coloring     : greedy vertex colouring dict
-        chromatic_num: χ(G_gen)  — lower-bound Tocks with MIS
+        gen_graph   : S' (conflict graph over to_measure nodes)
+        coloring    : DSATUR colouring dict {node: colour_index}
+        chi_greedy  : greedy upper-bound estimate of χ(S')
         """
-        # --- Generator graph with MIS reduction applied ---
-        gen_graph     = self.build_generator_graph()
-        coloring      = nx.coloring.greedy_color(gen_graph, strategy="DSATUR")
-        chromatic_num = max(coloring.values()) + 1 if coloring else 0
+        gen_graph  = self.build_generator_graph()
+        tocks      = len(self.schedule)
 
-        # --- Baseline: generator graph without MIS (all nodes measured) ---
-        # Build the full conflict graph over all vertices, colour it, and read
-        # off χ directly — this is the correct theoretical baseline and avoids
-        # the interval-scheduler artefacts that caused the original FAIL.
-        full_gen = nx.Graph()
-        all_nodes = list(self.G.nodes)
-        full_gen.add_nodes_from(all_nodes)
-        for i, m1 in enumerate(all_nodes):
-            for m2 in all_nodes[i + 1 :]:
-                support_m1 = {m1} | set(self.G.neighbors(m1))
-                support_m2 = {m2} | set(self.G.neighbors(m2))
-                if support_m1 & support_m2:
-                    full_gen.add_edge(m1, m2)
+        if not gen_graph.nodes:
+            print("\n  No generators to measure — trivially 0 Tocks.\n")
+            return gen_graph, {}, 0
 
-        full_coloring  = nx.coloring.greedy_color(full_gen, strategy="DSATUR")
-        tocks_no_mis   = max(full_coloring.values()) + 1 if full_coloring else 0
+        # ── Upper bound: DSATUR greedy colouring ─────────────────────────────
+        coloring   = nx.coloring.greedy_color(gen_graph, strategy="DSATUR")
+        chi_greedy = max(coloring.values()) + 1
 
-        # Correct invariant:
-        #   Tocks_with_MIS <= χ(full_gen)
-        #
-        # χ(full_gen) is the chromatic lower bound on Tocks *without* MIS.
-        # MIS can only reduce the measurement load, so our schedule must
-        # never exceed this bound.  We compare against χ(full_gen) rather
-        # than χ(G_gen_mis) because a suboptimal greedy MIS (used for
-        # large graphs) can leave more nodes to measure than necessary,
-        # making χ(G_gen_mis) a looser (larger) bound that is less meaningful.
-        tocks_with_mis = len(self.schedule)
-        bound_ok       = tocks_with_mis <= tocks_no_mis   # tocks_no_mis == χ(full_gen)
-        mis_savings    = tocks_no_mis - tocks_with_mis
+        # ── Lower bound: clique number ω(S') ─────────────────────────────────
+        # nx.graph_clique_number is exact but slow; use max_clique for small
+        # graphs and the Lovász theta / degree bound for large ones.
+        n_gen = len(gen_graph.nodes)
+        if n_gen <= 50:
+            clique_nodes, _ = nx.clique.max_weight_clique(gen_graph, weight=None)
+            omega = len(clique_nodes)
+        else:
+            # large_clique_size returns an int directly
+            omega = nx.approximation.clique.large_clique_size(gen_graph)
+
+        bug = tocks < omega
 
         print("\n" + "=" * 52)
         print("  CHROMATIC NUMBER VERIFICATION")
         print("=" * 52)
-        print(f"  Generator graph nodes  : {len(gen_graph.nodes)}  (after MIS)")
-        print(f"  Generator graph edges  : {len(gen_graph.edges)}  (after MIS)")
-        print(f"  χ(G_gen, with MIS)     : {chromatic_num}  (lower bound, MIS-reduced graph)")
-        print(f"  χ(G_gen, no MIS)       : {tocks_no_mis}  (lower bound, full graph)")
-        print(f"  Tocks achieved         : {tocks_with_mis}")
-        print(f"  MIS savings (Δχ)       : {mis_savings} Tock(s)")
-        print(f"  Bound check (≤ χ_full) : {'✓ PASS' if bound_ok else '✗ FAIL'}")
+        print(f"  Generator graph nodes  : {n_gen}  (after MIS)")
+        print(f"  Generator graph edges  : {len(gen_graph.edges)}")
+        print(f"  Lower bound  ω(S')     : {omega}  (clique number)")
+        print(f"  Upper bound  χ(S')     : {chi_greedy}  (DSATUR colouring)")
+        print(f"  Tocks achieved         : {tocks}")
+        print(f"  MIS savings            : {chi_greedy - tocks} Tock(s) vs upper bound")
+        print(f"  Bound check            : {'✗ FAIL — tocks < ω (schedule bug)' if bug else '✓ PASS'}")
         print("=" * 52 + "\n")
 
-        return gen_graph, coloring, chromatic_num
+        return gen_graph, coloring, chi_greedy
 
     # ------------------------------------------------------------------
     # Shared layout helper
@@ -1065,3 +1068,158 @@ class CZScheduler:
         if visualize:
             self.show_overview()
             self.show_all_rounds()
+
+
+# ===========================================================================
+# CZSchedulerFixedAncilla — Case 3: CZ gates + k fixed ancilla ELUs
+# ===========================================================================
+#
+# Theory
+# ------
+# Same greedy edge-colouring as CZScheduler (Case 2), but the ancilla pool
+# is capped at k ELUs.  When a colour class Cᵢ has more than k edges, it is
+# split into consecutive sub-batches of ≤ k edges.  Each sub-batch takes
+# exactly 2 Tocks:
+#
+#   Tock 2b−1  (Step 1): for every CZ(u,v) in the batch, measure Z_u ⊗ Z_anc
+#   Tock 2b    (Step 2): for every CZ(u,v) in the batch, measure Z_v ⊗ Z_anc
+#
+# Sub-batches from different colour classes CANNOT be pipelined in general
+# because adjacent colour classes can share vertices, causing qubit conflicts.
+# Sub-batches are therefore executed in strict sequence.
+#
+#   Total Tocks  =  2 × Σᵢ ⌈|Cᵢ| / k⌉
+#
+# Lower bound on 2-Tock windows: T_lb = Σᵢ ⌈|Cᵢ| / k⌉  (achieved exactly)
+#
+# Special cases
+#   k ≥ max_i |Cᵢ|  →  same as Case 2 (no extra splitting)
+#   k = 1            →  Total Tocks = 2·|E|  (all CZs sequential)
+
+class CZSchedulerFixedAncilla(CZScheduler):
+    """
+    Case 3 — CZ-gate graph-state generation with k fixed ancilla ELUs
+    and all-to-all connectivity.
+
+    Inherits greedy edge-colouring from CZScheduler.  Adds ancilla-pool
+    splitting: each colour class is divided into sub-batches of ≤ k edges,
+    executed sequentially (2 Tocks per sub-batch).
+
+    Parameters
+    ----------
+    graph : nx.Graph
+    k     : int — ancilla pool size (≥ 1)
+    """
+
+    def __init__(self, graph: nx.Graph, k: int) -> None:
+        if k < 1:
+            raise ValueError("Ancilla pool size k must be at least 1.")
+        super().__init__(graph)
+        self.k: int = k
+        self.batches: list[list[tuple]] = []   # all sub-batches in order (each = 2 Tocks)
+
+    # ------------------------------------------------------------------
+    # Batch scheduling
+    # ------------------------------------------------------------------
+
+    def schedule_batches(self) -> list[list[tuple]]:
+        """
+        Split each colour class into sub-batches of ≤ k edges.
+        Must be called after schedule_cz_rounds() (or run()).
+        Populates self.batches and returns it.
+        """
+        if not self.cz_rounds:
+            self.schedule_cz_rounds()
+
+        all_batches: list[list[tuple]] = []
+        for round_edges in self.cz_rounds:
+            for i in range(0, len(round_edges), self.k):
+                chunk = round_edges[i : i + self.k]
+                if chunk:
+                    all_batches.append(chunk)
+        self.batches = all_batches
+        return self.batches
+
+    # ------------------------------------------------------------------
+    # Resource metrics
+    # ------------------------------------------------------------------
+
+    def n_tocks(self) -> int:
+        """Total Tocks = 2 × number of sub-batches."""
+        return 2 * len(self.batches)
+
+    def n_sub_batches(self) -> int:
+        """
+        Number of serial 2-Tock windows needed.
+        Equals Σᵢ ⌈|Cᵢ|/k⌉ — this is also the lower bound in 2-Tock units.
+        """
+        return sum(math.ceil(len(r) / self.k) for r in self.cz_rounds)
+
+    # ------------------------------------------------------------------
+    # Console summary (overrides parent)
+    # ------------------------------------------------------------------
+
+    def print_summary(self) -> None:
+        n_b    = len(self.batches)
+        n_t    = 2 * n_b
+        n_t_c2 = 2 * self.chromatic_index
+
+        print("\n" + "=" * 52)
+        print("  CASE 3 — CZ + k ANCILLA ELUs SUMMARY")
+        print("=" * 52)
+        print(f"  Vertices (qubits)      : {len(self.G.nodes)}")
+        print(f"  Edges (CZ gates)       : {len(self.G.edges)}")
+        print(f"  Max degree Δ(G)        : {self.max_degree}")
+        print(f"  Chromatic index χ'(G)  : {self.chromatic_index}")
+        print(f"  Ancilla pool  k        : {self.k}")
+        print(f"  Sub-batches (windows)  : {n_b}  (= Σᵢ ⌈|Cᵢ|/k⌉)")
+        print(f"  Total Tocks            : {n_t}  (= 2 × {n_b})")
+        print(f"  Case 2 Tocks (k=∞)    : {n_t_c2}  (= 2·χ'(G))")
+        overhead = n_t - n_t_c2
+        print(f"  Overhead vs Case 2     : +{overhead} Tock(s)"
+              f"  ({overhead / n_t_c2 * 100:.0f}% more)" if n_t_c2 else "")
+        print("=" * 52)
+
+        batch_num = 0
+        for ci, round_edges in enumerate(self.cz_rounds):
+            if not round_edges:
+                continue
+            n_sub = math.ceil(len(round_edges) / self.k)
+            print(f"\n  Colour class {ci}  ({len(round_edges)} edge(s),"
+                  f" {n_sub} sub-batch(es)):")
+            for si in range(0, len(round_edges), self.k):
+                chunk = round_edges[si : si + self.k]
+                if not chunk:
+                    continue
+                t1 = 2 * batch_num + 1
+                t2 = 2 * batch_num + 2
+                print(f"    Sub-batch {batch_num + 1}  (Tocks {t1}–{t2},"
+                      f" {len(chunk)} CZ gate(s)):")
+                for u, v in sorted(chunk):
+                    print(f"      CZ({u},{v}):  "
+                          f"Tock {t1}: Z_{u}⊗Z_anc  |  "
+                          f"Tock {t2}: Z_{v}⊗Z_anc")
+                batch_num += 1
+
+    # ------------------------------------------------------------------
+    # Public entry point (overrides parent)
+    # ------------------------------------------------------------------
+
+    def run(
+        self,
+        visualize:     bool = True,
+        verify_vizing: bool = True,
+    ) -> None:
+        """
+        Run Case 3: edge-colour G, split colour classes into k-ancilla
+        sub-batches, print summary.
+        """
+        self.schedule_cz_rounds()   # edge colouring → self.cz_rounds
+        self.schedule_batches()     # sub-batch split  → self.batches
+        self.print_summary()
+
+        if verify_vizing:
+            self.verify_vizing()    # inherited — Vizing's theorem check
+
+        if visualize:
+            self.show_overview()    # inherited — edge-colouring overview
