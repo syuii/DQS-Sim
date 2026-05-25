@@ -1209,6 +1209,189 @@ def show_qubit_occupancy_case3(
 
 # ============================================================================
 
+def show_qubit_occupancy_case2(
+    cz:        "CZScheduler",
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """
+    Per-tock qubit occupancy figure for Case 2 (CZ gates, unlimited ancillas).
+
+    Layout is identical to Case 3: n_q columns, one per data qubit.
+      Top row    — ancilla ELU drawn above the data qubit it is interacting with.
+      Bottom row — data qubit tile, always present; highlighted when active.
+      Connector  — vertical line linking each active (ancilla, qubit) pair.
+
+    Since ancillas are unlimited in Case 2, every CZ gate in a round runs in
+    parallel — the ancilla count per tock equals the number of edges in that
+    colour class.
+    """
+    G       = cz.G
+    n_q     = len(G.nodes)
+    n_rounds = cz.chromatic_index
+    n_tocks  = 2 * n_rounds
+    if n_tocks == 0:
+        print("  No tocks to display.")
+        return
+
+    nodes_list  = list(G.nodes)
+    palette     = _PALETTE
+
+    strip_w = max(8, min(n_q * 0.60 + 3, 30))
+    fig, axes = plt.subplots(
+        n_tocks, 2,
+        figsize=(strip_w + 7, 5.5 * n_tocks),
+        facecolor=_FIG_BG,
+        gridspec_kw={"width_ratios": [1, max(1, n_q // 6)]},
+    )
+    fig.suptitle(
+        "Qubit Occupancy per Tock  (Case 2 — CZ, unlimited ancillas)",
+        fontsize=14, fontweight="bold", y=1.01,
+    )
+
+    if n_tocks == 1:
+        axes = [axes]
+
+    pos = cz._get_pos()
+
+    import networkx as nx_local
+
+    for t in range(n_tocks):
+        ax_graph, ax_tiles = axes[t]
+        round_idx = t // 2
+        step      = t % 2          # 0 = Step 1 (Z_u⊗Z_anc), 1 = Step 2 (Z_v⊗Z_anc)
+        round_edges = cz.cz_rounds[round_idx]
+        round_col   = palette[round_idx % len(palette)]
+
+        active_step1 = {u for u, v in round_edges}
+        active_step2 = {v for u, v in round_edges}
+        active_now   = active_step1 if step == 0 else active_step2
+        active_other = active_step2 if step == 0 else active_step1
+
+        # ── Graph view ───────────────────────────────────────────────────────
+        node_colors = [
+            "#FFCC80" if nd in active_now   else
+            "#FFECB3" if nd in active_other else
+            _COL_IDLE
+            for nd in G.nodes
+        ]
+        round_edge_set = {(min(u, v), max(u, v)) for u, v in round_edges}
+        active_edges   = [(u, v) for u, v in G.edges()
+                          if (min(u, v), max(u, v)) in round_edge_set]
+        inactive_edges = [(u, v) for u, v in G.edges()
+                          if (min(u, v), max(u, v)) not in round_edge_set]
+
+        nx_local.draw_networkx_edges(G, pos, edgelist=inactive_edges,
+                                     width=1.2, edge_color=_COL_EDGE_OFF, ax=ax_graph)
+        nx_local.draw_networkx_edges(G, pos, edgelist=active_edges,
+                                     width=2.5, edge_color=round_col, ax=ax_graph)
+        nx_local.draw_networkx_nodes(G, pos,
+                                     node_size=700, node_color=node_colors,
+                                     edgecolors=_COL_BORDER, linewidths=1.2,
+                                     ax=ax_graph)
+        step_lbl = "Z_u⊗Z_anc" if step == 0 else "Z_v⊗Z_anc"
+        labels = {
+            nd: (f"{nd}\n{step_lbl}" if nd in active_now else str(nd))
+            for nd in G.nodes
+        }
+        nx_local.draw_networkx_labels(G, pos, labels,
+                                      font_size=8, font_color="#222", ax=ax_graph)
+
+        op_parts = [
+            f"Z_{u if step == 0 else v}⊗Z_anc{i}"
+            for i, (u, v) in enumerate(round_edges)
+        ]
+        ax_graph.text(0.5, 0.02, "  |  ".join(op_parts),
+                      transform=ax_graph.transAxes,
+                      ha="center", fontsize=8, family="monospace",
+                      color="#666", zorder=3)
+
+        ax_graph.legend(
+            handles=[
+                mpatches.Patch(facecolor="#FFCC80", edgecolor=_COL_BORDER,
+                               lw=1.2, label="Active this tock"),
+                mpatches.Patch(facecolor="#FFECB3", edgecolor=_COL_BORDER,
+                               lw=1.2, label="Other CZ endpoint"),
+            ],
+            fontsize=8, frameon=False, loc="upper right",
+        )
+        step_name = "Step 1 (Z_u⊗Z_anc)" if step == 0 else "Step 2 (Z_v⊗Z_anc)"
+        ax_graph.set_title(
+            f"Tock {t + 1} — CZ Round {round_idx + 1}, {step_name}",
+            fontsize=11, fontweight="bold", pad=8,
+        )
+        ax_graph.axis("off")
+        ax_graph.margins(0.18)
+
+        # ── Tile strip ───────────────────────────────────────────────────────
+        # Build: node → (ancilla_index, tile_color) for qubits active this tock
+        active_map: dict = {}
+        for i, (u, v) in enumerate(round_edges):
+            qubit = u if step == 0 else v
+            active_map[qubit] = (i, palette[i % len(palette)])
+
+        n_active = len(active_map)
+
+        ax_tiles.set_xlim(-0.6, n_q + 0.2)
+        ax_tiles.set_ylim(-0.3, 2.8)
+        ax_tiles.set_aspect("equal")
+        ax_tiles.axis("off")
+        ax_tiles.set_title(
+            f"Tock {t + 1} — Tile Occupancy  "
+            f"({n_active} ancilla ELU(s) docked)",
+            fontsize=10, fontweight="bold", pad=8,
+        )
+
+        ax_tiles.text(-0.3, 2.0, "Ancilla", ha="right", va="center",
+                      fontsize=10, color="#555", fontweight="bold")
+        ax_tiles.text(-0.3, 0.5, "Data",    ha="right", va="center",
+                      fontsize=10, color="#555", fontweight="bold")
+
+        for qi, nd in enumerate(nodes_list):
+            if nd in active_map:
+                ai, tile_col = active_map[nd]
+
+                ax_tiles.add_patch(plt.Rectangle(
+                    (qi, 0.0), 1, 1,
+                    facecolor=tile_col, edgecolor="white",
+                    linewidth=1.5, alpha=0.88, zorder=2,
+                ))
+                ax_tiles.text(qi + 0.5, 0.5, f"Q{nd}",
+                              ha="center", va="center",
+                              fontsize=8, fontweight="bold", color="white", zorder=3)
+
+                ax_tiles.add_patch(plt.Rectangle(
+                    (qi, 1.5), 1, 1,
+                    facecolor=tile_col, edgecolor="white",
+                    linewidth=1.5, alpha=0.88, zorder=2,
+                ))
+                ax_tiles.text(qi + 0.5, 2.0, f"A{ai}",
+                              ha="center", va="center",
+                              fontsize=8, fontweight="bold", color="white", zorder=3)
+
+                ax_tiles.plot([qi + 0.5, qi + 0.5], [1.0, 1.5],
+                              color=tile_col, linewidth=2.5, alpha=0.75,
+                              solid_capstyle="round", zorder=1)
+            else:
+                ax_tiles.add_patch(plt.Rectangle(
+                    (qi, 0.0), 1, 1,
+                    facecolor="#fafafa", edgecolor="#dddddd", linewidth=0.8,
+                ))
+                ax_tiles.text(qi + 0.5, 0.5, f"Q{nd}",
+                              ha="center", va="center", fontsize=7, color="#bbbbbb")
+
+                ax_tiles.add_patch(plt.Rectangle(
+                    (qi, 1.5), 1, 1,
+                    facecolor="#f8f8f8", edgecolor="#e0e0e0",
+                    linewidth=0.6, linestyle="--",
+                ))
+
+    plt.tight_layout()
+    _save_or_show(fig, save_path, "Case 2 qubit occupancy", display)
+
+
+# ============================================================================
+
 def _save_or_show(
     fig:       plt.Figure,
     save_path: str | None,

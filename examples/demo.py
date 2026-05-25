@@ -34,6 +34,7 @@ from dqs_sim.visualizer import (
     show_heatmaps,
     show_2d_layout,
     show_qubit_occupancy,
+    show_qubit_occupancy_case2,
     show_qubit_occupancy_case3,
 )
 
@@ -90,6 +91,9 @@ def run_preset(graph_label: str, G: nx.Graph, k: int,
     show_qubit_occupancy(scheduler,
                          save_path=os.path.join(folder, "occupancy.png"),
                          display=display)
+    show_qubit_occupancy_case2(cz,
+                               save_path=os.path.join(folder, "occupancy2.png"),
+                               display=display)
     show_qubit_occupancy_case3(cz_k,
                                save_path=os.path.join(folder, "occupancy3.png"),
                                display=display)
