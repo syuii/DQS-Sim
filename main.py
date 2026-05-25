@@ -24,10 +24,11 @@ import sys
 import networkx as nx
 
 from cost_estimator import compute_report
-from substrate_scheduler import CZScheduler, SubstrateScheduler
-from visualizer import show_comparison_dashboard, show_gantt, show_heatmaps, show_2d_layout, show_qubit_occupancy
+from substrate_scheduler import CZScheduler, CZSchedulerFixedAncilla, SubstrateScheduler
+from visualizer import (show_comparison_dashboard, show_gantt, show_heatmaps,
+                        show_2d_layout, show_qubit_occupancy, show_qubit_occupancy_case3)
 
-# ---------------------------------------------------------------------------
+
 # Graph builders
 # ---------------------------------------------------------------------------
 
@@ -85,8 +86,14 @@ def make_parser() -> argparse.ArgumentParser:
 
     # ── Simulation ────────────────────────────────────────────────────────────
     s = p.add_argument_group("Simulation")
-    s.add_argument("--case", choices=["1", "2", "both"], default="both",
-                   help="Which scheduling case to run")
+    s.add_argument("--case", choices=["1", "2", "3", "both", "all"],
+                   default="both",
+                   help="Scheduling case(s): 1=MPP, 2=CZ unlimited, "
+                        "3=CZ k-ancilla, both=1+2, all=1+2+3")
+    s.add_argument("--ancillas", type=int, default=None, metavar="K",
+                   help="Ancilla pool size k for Case 3 (--case 3 or all). "
+                        "If omitted with --case all, auto-selects k = ⌊peak_colour_class/2⌋. "
+                        "If omitted with --case 3, defaults to k=1.")
     s.add_argument("--no-verify", action="store_true",
                    help="Skip chromatic / Vizing verification (faster for large graphs)")
 
@@ -99,6 +106,10 @@ def make_parser() -> argparse.ArgumentParser:
     o = p.add_argument_group("Output")
     o.add_argument("--visualize", action="store_true",
                    help="Show per-tock / per-round matplotlib figures (best for small graphs)")
+    o.add_argument("--show", action="store_true",
+                   help="Display all summary visualizations interactively "
+                        "(Gantt, heatmap, 2D layout, occupancy, dashboard). "
+                        "Compatible with --save-* flags: use both to display AND save.")
     o.add_argument("--gantt", action="store_true",
                    help="Gantt chart: qubit activity over time (scales to ~100 nodes)")
     o.add_argument("--heatmap", action="store_true",
@@ -106,7 +117,7 @@ def make_parser() -> argparse.ArgumentParser:
     o.add_argument("--layout", action="store_true",
                    help="2D patch layout: ELUs as physical surface-code patches")
     o.add_argument("--occupancy", action="store_true",
-                   help="Per-tock qubit occupancy tile strip (Case 1)")
+                   help="Per-tock qubit occupancy tile strip (all running cases)")
     o.add_argument("--dashboard", action="store_true",
                    help="Bar-chart resource comparison (both cases)")
     o.add_argument("--save-all", metavar="DIR", nargs="?", const=".",
@@ -118,7 +129,9 @@ def make_parser() -> argparse.ArgumentParser:
     o.add_argument("--save-layout",    metavar="FILE.png",
                    help="Save 2D patch layout to file")
     o.add_argument("--save-occupancy", metavar="FILE.png",
-                   help="Save qubit occupancy figure to file")
+                   help="Save Case 1 qubit occupancy figure to file")
+    o.add_argument("--save-occupancy3", metavar="FILE.png",
+                   help="Save Case 3 qubit occupancy figure to file")
     o.add_argument("--save-dashboard", metavar="FILE.png",
                    help="Save dashboard to file")
     o.add_argument("--export", metavar="FILE.json",
@@ -142,8 +155,9 @@ def main() -> None:
         args.save_gantt     = args.save_gantt     or os.path.join(folder, "gantt.png")
         args.save_heatmap   = args.save_heatmap   or os.path.join(folder, "heatmap.png")
         args.save_layout    = args.save_layout    or os.path.join(folder, "layout.png")
-        args.save_occupancy = args.save_occupancy or os.path.join(folder, "occupancy.png")
-        args.save_dashboard = args.save_dashboard or os.path.join(folder, "dashboard.png")
+        args.save_occupancy  = args.save_occupancy  or os.path.join(folder, "occupancy.png")
+        args.save_occupancy3 = args.save_occupancy3 or os.path.join(folder, "occupancy3.png")
+        args.save_dashboard  = args.save_dashboard  or os.path.join(folder, "dashboard.png")
         args.export         = args.export         or os.path.join(folder, "report.json")
         print(f"  Output folder: {folder}/")
 
@@ -152,11 +166,12 @@ def main() -> None:
           f"|V|={len(G.nodes)}, |E|={len(G.edges)}, "
           f"Δ={max(d for _, d in G.degree()) if G.nodes else 0}")
 
-    scheduler: SubstrateScheduler | None = None
-    cz:        CZScheduler        | None = None
+    scheduler: SubstrateScheduler        | None = None
+    cz:        CZScheduler               | None = None
+    cz_k:      CZSchedulerFixedAncilla   | None = None
 
     # ── Case 1 ───────────────────────────────────────────────────────────────
-    if args.case in ("1", "both"):
+    if args.case in ("1", "both", "all"):
         print("\n" + "#" * 52)
         print("#  CASE 1 — Stabilizer MPP Scheduler")
         print("#" * 52)
@@ -164,20 +179,39 @@ def main() -> None:
         scheduler.run(visualize=args.visualize, verify_chromatic=verify)
 
     # ── Case 2 ───────────────────────────────────────────────────────────────
-    if args.case in ("2", "both"):
+    if args.case in ("2", "both", "all"):
         print("\n" + "#" * 52)
-        print("#  CASE 2 — CZ Gate Scheduler")
+        print("#  CASE 2 — CZ Gate Scheduler  (unlimited ancillas)")
         print("#" * 52)
         cz = CZScheduler(G)
         cz.run(visualize=args.visualize, verify_vizing=verify)
 
-    # ── Resource report (requires both cases) ─────────────────────────────────
+    # ── Case 3 ───────────────────────────────────────────────────────────
+    if args.case in ("3", "all"):
+        k = args.ancillas
+        if k is None:
+            if cz is not None and cz.cz_rounds:
+                peak = max(len(r) for r in cz.cz_rounds)
+                k = max(1, peak // 2)
+                print(f"\n  [Case 3] --ancillas not set. "
+                      f"Auto-selecting k={k}  (⌊{peak}/2⌋ from peak colour class).")
+            else:
+                k = 1
+                print(f"\n  [Case 3] --ancillas not set. Defaulting to k=1.")
+        print("\n" + "#" * 52)
+        print(f"#  CASE 3 — CZ Gates, k={k} Ancilla ELU(s)")
+        print("#" * 52)
+        cz_k = CZSchedulerFixedAncilla(G, k=k)
+        cz_k.run(visualize=args.visualize, verify_vizing=verify)
+
+    # ── Resource report ──────────────────────────────────────────────────────
     if scheduler is not None and cz is not None:
         report = compute_report(
             scheduler,
             cz,
             code_distance=args.code_distance,
             graph_type=args.graph,
+            cz_k=cz_k,
         )
 
         print("\n" + "=" * 52)
@@ -188,25 +222,36 @@ def main() -> None:
         if args.export:
             report.export_json(args.export)
 
-        if args.gantt or args.save_gantt:
-            show_gantt(scheduler, cz, save_path=args.save_gantt)
+        show = args.show   # True → display interactively even when saving
 
-        if args.heatmap or args.save_heatmap:
-            show_heatmaps(scheduler, cz, save_path=args.save_heatmap)
+        if args.show or args.gantt or args.save_gantt:
+            show_gantt(scheduler, cz, cz_k=cz_k,
+                       save_path=args.save_gantt, display=show)
 
-        if args.layout or args.save_layout:
-            show_2d_layout(scheduler, cz, save_path=args.save_layout)
+        if args.show or args.heatmap or args.save_heatmap:
+            show_heatmaps(scheduler, cz, cz_k=cz_k,
+                          save_path=args.save_heatmap, display=show)
 
-        if args.occupancy or args.save_occupancy:
-            show_qubit_occupancy(scheduler, save_path=args.save_occupancy)
+        if args.show or args.layout or args.save_layout:
+            show_2d_layout(scheduler, cz, cz_k=cz_k,
+                           save_path=args.save_layout, display=show)
 
-        if args.dashboard or args.save_dashboard:
-            show_comparison_dashboard(report, save_path=args.save_dashboard)
+        if args.show or args.occupancy or args.save_occupancy:
+            show_qubit_occupancy(scheduler,
+                                 save_path=args.save_occupancy, display=show)
 
-    elif args.gantt or args.heatmap or args.layout or args.occupancy or args.dashboard:
+        if (args.show or args.occupancy or args.save_occupancy3) and cz_k is not None:
+            show_qubit_occupancy_case3(cz_k,
+                                       save_path=args.save_occupancy3, display=show)
+
+        if args.show or args.dashboard or args.save_dashboard:
+            show_comparison_dashboard(report,
+                                      save_path=args.save_dashboard, display=show)
+
+    elif args.show or args.gantt or args.heatmap or args.layout or args.occupancy or args.dashboard:
         print(
-            "\n  Note: visualisation flags require both cases "
-            "(use --case both, which is the default)."
+            "\n  Note: visualisation flags require Cases 1 and 2 "
+            "(use --case both or --case all)."
         )
 
 

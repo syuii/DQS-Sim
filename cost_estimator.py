@@ -20,6 +20,12 @@ Case 2 (CZ gates, unlimited ancillas)
   - Ancilla ELUs     : one per CZ gate running in parallel
   - Peak ancilla     : max edges in any CZ-round colour class
   - Total Tocks      : 2 × χ'(G)
+
+Case 3 (CZ gates, k fixed ancilla ELUs)
+  - Data ELUs        : |V|
+  - Ancilla ELUs     : k  (fixed pool)
+  - Each colour class split into sub-batches of ≤ k edges
+  - Total Tocks      : 2 × Σᵢ ⌈|Cᵢ|/k⌉
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from substrate_scheduler import CZScheduler, SubstrateScheduler
+    from substrate_scheduler import CZScheduler, CZSchedulerFixedAncilla, SubstrateScheduler
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +85,14 @@ class ResourceReport:
     # ── Comparison ───────────────────────────────────────────────────────────
     tock_ratio_c2_c1: float   # tocks_case2 / tocks_case1
 
+    # ── Case 3 (CZ gates, k fixed ancilla ELUs) — optional ──────────────────
+    ancilla_k:               int   | None = None
+    n_batches_case3:         int   | None = None   # Σᵢ ⌈|Cᵢ|/k⌉
+    tocks_case3:             int   | None = None   # 2 × n_batches
+    peak_ancilla_ELUs_case3: int   | None = None   # = k
+    total_phys_qubits_case3: int   | None = None
+    tock_ratio_c3_c1:        float | None = None   # tocks_case3 / tocks_case1
+
     # -------------------------------------------------------------------------
 
     def to_dict(self) -> dict:
@@ -90,38 +104,86 @@ class ResourceReport:
         print(f"  Results exported → {path}")
 
     def print_table(self) -> None:
-        W = 36
-        sep_row = ("─" * (W - 2), "─" * 8, "─" * 8)
+        W    = 36
+        has3 = self.tocks_case3 is not None
 
-        rows: list[tuple] = [
-            ("Graph topology",           self.graph_type,              ""),
-            ("Nodes  |V|",               self.graph_nodes,             self.graph_nodes),
-            ("Edges  |E|",               self.graph_edges,             self.graph_edges),
-            ("Max degree  Δ(G)",         self.max_degree,              self.max_degree),
-            ("Code distance  d",         self.code_distance,           self.code_distance),
-            ("Phys. qubits / ELU (2d²-1)", self.phys_per_ELU,         self.phys_per_ELU),
-            sep_row,
-            ("Data ELUs",                self.data_ELUs,               self.data_ELUs),
-            ("Peak ancilla ELUs",        self.peak_ancilla_ELUs_case1, self.peak_ancilla_ELUs_case2),
-            ("MIS size  (Case 1 only)",  self.mis_size,                "—"),
-            ("Vizing class  (Case 2)",   "—",                          self.vizing_class),
-            ("Chromatic index  χ'(G)",   "—",                          self.chromatic_index),
-            sep_row,
-            ("Total Tocks",              self.tocks_case1,             self.tocks_case2),
-            ("Total physical qubits",    f"{self.total_phys_qubits_case1:,}",
-                                         f"{self.total_phys_qubits_case2:,}"),
-            ("Tock ratio  C2 / C1",      "—",                          f"{self.tock_ratio_c2_c1:.2f}×"),
-        ]
+        c3_peak = f"k={self.ancilla_k}" if has3 else "—"
+        c3_tocks = str(self.tocks_case3) if has3 else "—"
+        c3_phys  = f"{self.total_phys_qubits_case3:,}" if has3 else "—"
+        c3_ratio = f"{self.tock_ratio_c3_c1:.2f}×" if has3 else "—"
 
-        print("\n" + "╔" + "═" * W + "╦" + "═" * 10 + "╦" + "═" * 10 + "╗")
-        print(f"║  {'Metric':<{W - 2}}║{'Case 1':^10}║{'Case 2':^10}║")
-        print("╠" + "═" * W + "╬" + "═" * 10 + "╬" + "═" * 10 + "╣")
-        for label, c1, c2 in rows:
-            if str(label).startswith("─"):
-                print("╟" + "─" * W + "╫" + "─" * 10 + "╫" + "─" * 10 + "╢")
-            else:
-                print(f"║  {str(label):<{W - 2}}║{str(c1):^10}║{str(c2):^10}║")
-        print("╚" + "═" * W + "╩" + "═" * 10 + "╩" + "═" * 10 + "╝\n")
+        # ── Two-column or three-column separator rows ─────────────────────────
+        def _sep():
+            if has3:
+                return ("─" * (W - 2), "─" * 8, "─" * 8, "─" * 10)
+            return ("─" * (W - 2), "─" * 8, "─" * 8)
+
+        rows: list[tuple]
+        if has3:
+            rows = [
+                ("Graph topology",             self.graph_type,              "",                     ""),
+                ("Nodes  |V|",                 self.graph_nodes,             self.graph_nodes,        self.graph_nodes),
+                ("Edges  |E|",                 self.graph_edges,             self.graph_edges,        self.graph_edges),
+                ("Max degree  Δ(G)",           self.max_degree,              self.max_degree,         self.max_degree),
+                ("Code distance  d",           self.code_distance,           self.code_distance,      self.code_distance),
+                ("Phys. qubits / ELU (2d²-1)", self.phys_per_ELU,           self.phys_per_ELU,       self.phys_per_ELU),
+                _sep(),
+                ("Data ELUs",                  self.data_ELUs,              self.data_ELUs,           self.data_ELUs),
+                ("Peak ancilla ELUs",          self.peak_ancilla_ELUs_case1, self.peak_ancilla_ELUs_case2, c3_peak),
+                ("MIS size  (Case 1 only)",    self.mis_size,               "—",                     "—"),
+                ("Vizing class  (Case 2/3)",   "—",                          self.vizing_class,       self.vizing_class),
+                ("Chromatic index  χ'(G)",     "—",                          self.chromatic_index,    self.chromatic_index),
+                ("Ancilla pool  k  (Case 3)",   "—",                          "—",                    self.ancilla_k),
+                ("Sub-batches  (Case 3)",       "—",                          "—",                    self.n_batches_case3),
+                _sep(),
+                ("Total Tocks",                self.tocks_case1,             self.tocks_case2,        c3_tocks),
+                ("Total physical qubits",      f"{self.total_phys_qubits_case1:,}",
+                                               f"{self.total_phys_qubits_case2:,}",                  c3_phys),
+                ("Tock ratio  vs Case 1",      "—",                          f"{self.tock_ratio_c2_c1:.2f}×", c3_ratio),
+            ]
+        else:
+            rows = [
+                ("Graph topology",             self.graph_type,              ""),
+                ("Nodes  |V|",                 self.graph_nodes,             self.graph_nodes),
+                ("Edges  |E|",                 self.graph_edges,             self.graph_edges),
+                ("Max degree  Δ(G)",           self.max_degree,              self.max_degree),
+                ("Code distance  d",           self.code_distance,           self.code_distance),
+                ("Phys. qubits / ELU (2d²-1)", self.phys_per_ELU,           self.phys_per_ELU),
+                _sep(),
+                ("Data ELUs",                  self.data_ELUs,               self.data_ELUs),
+                ("Peak ancilla ELUs",          self.peak_ancilla_ELUs_case1, self.peak_ancilla_ELUs_case2),
+                ("MIS size  (Case 1 only)",    self.mis_size,                "—"),
+                ("Vizing class  (Case 2)",     "—",                          self.vizing_class),
+                ("Chromatic index  χ'(G)",     "—",                          self.chromatic_index),
+                _sep(),
+                ("Total Tocks",                self.tocks_case1,             self.tocks_case2),
+                ("Total physical qubits",      f"{self.total_phys_qubits_case1:,}",
+                                               f"{self.total_phys_qubits_case2:,}"),
+                ("Tock ratio  C2 / C1",        "—",                          f"{self.tock_ratio_c2_c1:.2f}×"),
+            ]
+
+        if has3:
+            hdr = f"║  {'Metric':<{W - 2}}║{'Case 1':^10}║{'Case 2':^10}║{'Case 3':^12}║"
+            print("\n" + "╔" + "═" * W + "╦" + "═" * 10 + "╦" + "═" * 10 + "╦" + "═" * 12 + "╗")
+            print(hdr)
+            print("╠" + "═" * W + "╬" + "═" * 10 + "╬" + "═" * 10 + "╬" + "═" * 12 + "╣")
+            for row in rows:
+                if str(row[0]).startswith("─"):
+                    print("╟" + "─" * W + "╫" + "─" * 10 + "╫" + "─" * 10 + "╫" + "─" * 12 + "╢")
+                else:
+                    label, c1, c2, c3 = row
+                    print(f"║  {str(label):<{W - 2}}║{str(c1):^10}║{str(c2):^10}║{str(c3):^12}║")
+            print("╚" + "═" * W + "╩" + "═" * 10 + "╩" + "═" * 10 + "╩" + "═" * 12 + "╝\n")
+        else:
+            print("\n" + "╔" + "═" * W + "╦" + "═" * 10 + "╦" + "═" * 10 + "╗")
+            print(f"║  {'Metric':<{W - 2}}║{'Case 1':^10}║{'Case 2':^10}║")
+            print("╠" + "═" * W + "╬" + "═" * 10 + "╬" + "═" * 10 + "╣")
+            for label, c1, c2 in rows:
+                if str(label).startswith("─"):
+                    print("╟" + "─" * W + "╫" + "─" * 10 + "╫" + "─" * 10 + "╢")
+                else:
+                    print(f"║  {str(label):<{W - 2}}║{str(c1):^10}║{str(c2):^10}║")
+            print("╚" + "═" * W + "╩" + "═" * 10 + "╩" + "═" * 10 + "╝\n")
 
 
 # ---------------------------------------------------------------------------
@@ -133,10 +195,12 @@ def compute_report(
     cz: "CZScheduler",
     code_distance: int,
     graph_type: str = "custom",
+    cz_k: "CZSchedulerFixedAncilla | None" = None,
 ) -> ResourceReport:
     """
-    Build a ResourceReport from already-run SubstrateScheduler and CZScheduler.
-    Both `.run()` must have been called before this function.
+    Build a ResourceReport from already-run schedulers.
+    scheduler.run() and cz.run() must have been called before this function.
+    Optionally include Case 3 data by passing a run() cz_k scheduler.
 
     Parameters
     ----------
@@ -144,6 +208,7 @@ def compute_report(
     cz             : finished CZScheduler (Case 2)
     code_distance  : surface code distance d
     graph_type     : label string for display
+    cz_k           : finished CZSchedulerFixedAncilla (Case 3), or None
     """
     G       = scheduler.G
     n       = len(G.nodes)
@@ -154,11 +219,27 @@ def compute_report(
     peak_anc_c1 = max((len(tock) for tock in scheduler.schedule), default=0)
     peak_anc_c2 = max((len(r)    for r    in cz.cz_rounds),       default=0)
 
-    tocks_c1    = len(scheduler.schedule)
-    tocks_c2    = 2 * cz.chromatic_index
-    chi_prime   = cz.chromatic_index
-    delta       = cz.max_degree
-    ratio       = tocks_c2 / tocks_c1 if tocks_c1 > 0 else float("inf")
+    tocks_c1  = len(scheduler.schedule)
+    tocks_c2  = 2 * cz.chromatic_index
+    chi_prime = cz.chromatic_index
+    delta     = cz.max_degree
+    ratio_c2  = tocks_c2 / tocks_c1 if tocks_c1 > 0 else float("inf")
+
+    # ── Case 3 (optional) ────────────────────────────────────────────────────
+    s3_k     = None
+    s3_nb    = None
+    s3_tocks = None
+    s3_peak  = None
+    s3_phys  = None
+    s3_ratio = None
+
+    if cz_k is not None:
+        s3_k     = cz_k.k
+        s3_nb    = len(cz_k.batches)
+        s3_tocks = 2 * s3_nb
+        s3_peak  = cz_k.k                          # ancilla demand = k per batch
+        s3_phys  = (n + s3_peak) * phys
+        s3_ratio = s3_tocks / tocks_c1 if tocks_c1 > 0 else float("inf")
 
     return ResourceReport(
         graph_type               = graph_type,
@@ -178,5 +259,12 @@ def compute_report(
         data_ELUs                = n,
         total_phys_qubits_case1  = (n + peak_anc_c1) * phys,
         total_phys_qubits_case2  = (n + peak_anc_c2) * phys,
-        tock_ratio_c2_c1         = ratio,
+        tock_ratio_c2_c1         = ratio_c2,
+        # Case 3
+        ancilla_k                = s3_k,
+        n_batches_case3          = s3_nb,
+        tocks_case3              = s3_tocks,
+        peak_ancilla_ELUs_case3  = s3_peak,
+        total_phys_qubits_case3  = s3_phys,
+        tock_ratio_c3_c1         = s3_ratio,
     )
