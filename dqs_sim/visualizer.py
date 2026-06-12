@@ -762,78 +762,141 @@ def show_comparison_dashboard(
     display:   bool = False,
 ) -> None:
     """
-    Three-panel bar chart: tocks / peak ancilla ELUs / physical qubits.
-    When the report includes Case 3 data, a third bar is added per panel.
+    Bar-chart resource comparison across all available cases.
+
+    When Cases 4 & 5 are present, a second row is added showing:
+      - Tocks breakdown (SWAP vs operation) for Cases 4 & 5 vs their
+        unlimited counterparts (Cases 1 & 2)
+      - Tock ratio comparison across all 5 cases
     """
     has3 = report.tocks_case3 is not None
+    has4 = report.tocks_case4 is not None
+    has5 = report.tocks_case5 is not None
+    has_limited = has4 or has5
 
+    # ── Build case labels and colours ────────────────────────────────────
+    cases  = ["Case 1\n(MPP)", "Case 2\n(CZ)"]
+    colors = ["#4C72B0", "#DD8452"]
     if has3:
-        cases  = ["Case 1\n(MPP)", "Case 2\n(CZ, ∞ anc)", f"Case 3\n(CZ, k={report.ancilla_k})"]
-        colors = ["#4C72B0", "#DD8452", "#55A868"]
-    else:
-        cases  = ["Case 1\n(MPP)", "Case 2\n(CZ)"]
-        colors = ["#4C72B0", "#DD8452"]
+        cases.append(f"Case 3\n(CZ, k={report.ancilla_k})")
+        colors.append("#55A868")
+    if has4:
+        topo = report.topology_name or "?"
+        cases.append(f"Case 4\n(MPP, {topo})")
+        colors.append("#C44E52")
+    if has5:
+        topo = report.topology_name or "?"
+        cases.append(f"Case 5\n(CZ, {topo})")
+        colors.append("#8172B2")
 
-    fig, axes = plt.subplots(1, 3, figsize=(16 if has3 else 14, 5),
-                             facecolor=_FIG_BG)
+    n_cases = len(cases)
+
+    # ── Figure layout ────────────────────────────────────────────────────
+    if has_limited:
+        fig, axes = plt.subplots(1, 3, figsize=(max(16, n_cases * 3.2 + 4), 6),
+                                 facecolor=_FIG_BG)
+    else:
+        fig, axes = plt.subplots(1, 3, figsize=(max(14, n_cases * 3 + 4), 5),
+                                 facecolor=_FIG_BG)
+
+    subtitle = f"{report.graph_type}(n={report.graph_nodes}), d={report.code_distance}"
+    if has_limited:
+        subtitle += f", topology={report.topology_name}"
     fig.suptitle(
-        f"Resource Comparison — {report.graph_type}(n={report.graph_nodes}), "
-        f"d={report.code_distance}",
+        f"Resource Comparison — {subtitle}",
         fontsize=13, fontweight="bold",
     )
 
-    def _panel(ax: plt.Axes, vals: list, title: str,
-               ylabel: str, fmt: str = "{}") -> None:
-        bar_w = 0.36 if has3 else 0.48
-        bars = ax.bar(cases, vals, color=colors, edgecolor="white",
-                      width=bar_w, zorder=2)
+    def _panel(ax: plt.Axes, vals: list, case_labels: list,
+               case_colors: list, title: str,
+               ylabel: str, fmt: str = "{}",
+               stacked_bottom: list | None = None,
+               stacked_label: str = "") -> None:
+        n = len(vals)
+        bar_w = max(0.28, min(0.55, 2.0 / n))
+        x = np.arange(n)
+
+        if stacked_bottom is not None:
+            # Stacked bar: bottom = SWAP tocks (orange), top = op tocks
+            bars_bot = ax.bar(x, stacked_bottom, color="#FFCC80",
+                              edgecolor="white", width=bar_w, zorder=2,
+                              label="SWAP Tocks")
+            bars_top = ax.bar(x, [v - b for v, b in zip(vals, stacked_bottom)],
+                              bottom=stacked_bottom, color=case_colors,
+                              edgecolor="white", width=bar_w, zorder=2,
+                              label="Operation Tocks")
+            for bar_b, bar_t, val, bot in zip(bars_bot, bars_top, vals, stacked_bottom):
+                cx = bar_b.get_x() + bar_b.get_width() / 2
+                # Total label on top
+                lbl = fmt.format(val) if isinstance(val, int) else str(val)
+                ax.text(cx, val * 1.02, lbl, ha="center", va="bottom",
+                        fontsize=10, fontweight="bold")
+                # SWAP count inside bottom bar (if nonzero)
+                if bot > 0:
+                    ax.text(cx, bot / 2, str(bot), ha="center", va="center",
+                            fontsize=8, color="#885500", fontweight="bold")
+            ax.legend(fontsize=8, frameon=True, framealpha=0.9,
+                      loc="upper left")
+        else:
+            bars = ax.bar(x, vals, color=case_colors, edgecolor="white",
+                          width=bar_w, zorder=2)
+            for bar, val in zip(bars, vals):
+                lbl = fmt.format(val) if isinstance(val, int) else str(val)
+                ax.text(bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() * 1.03,
+                        lbl, ha="center", va="bottom",
+                        fontsize=10, fontweight="bold")
+
         ax.set_title(title, fontsize=11, fontweight="bold", pad=8)
         ax.set_ylabel(ylabel, fontsize=10)
+        ax.set_xticks(x)
+        ax.set_xticklabels(case_labels, fontsize=8)
         ax.spines[["top", "right"]].set_visible(False)
         ax.grid(axis="y", linestyle="--", alpha=0.25, zorder=0)
-        ax.set_ylim(0, max(vals) * 1.30)
-        for bar, val in zip(bars, vals):
-            lbl = fmt.format(val) if isinstance(val, int) else str(val)
-            ax.text(bar.get_x() + bar.get_width() / 2,
-                    bar.get_height() * 1.03,
-                    lbl, ha="center", va="bottom",
-                    fontsize=10, fontweight="bold")
+        ax.set_ylim(0, max(vals) * 1.35)
 
+    # ── Tock values ──────────────────────────────────────────────────────
     tock_vals = [report.tocks_case1, report.tocks_case2]
-    anc_vals  = [report.peak_ancilla_ELUs_case1, report.peak_ancilla_ELUs_case2]
-    phys_vals = [report.total_phys_qubits_case1, report.total_phys_qubits_case2]
+    swap_vals = [0, 0]   # Cases 1 & 2 have 0 SWAP overhead
     if has3:
         tock_vals.append(report.tocks_case3)
-        anc_vals.append(report.peak_ancilla_ELUs_case3)
-        phys_vals.append(report.total_phys_qubits_case3)
+        swap_vals.append(0)
+    if has4:
+        tock_vals.append(report.tocks_case4)
+        swap_vals.append(report.swap_tocks_case4 or 0)
+    if has5:
+        tock_vals.append(report.tocks_case5)
+        swap_vals.append(report.swap_tocks_case5 or 0)
 
-    _panel(axes[0], tock_vals,
-           "Total Tocks\n(logical time steps)", "Tocks")
-    _panel(axes[1], anc_vals,
+    # ── Ancilla values ───────────────────────────────────────────────────
+    anc_vals = [report.peak_ancilla_ELUs_case1, report.peak_ancilla_ELUs_case2]
+    if has3:
+        anc_vals.append(report.peak_ancilla_ELUs_case3)
+    if has4:
+        anc_vals.append(report.peak_ancilla_ELUs_case1)  # same ELU model
+    if has5:
+        anc_vals.append(report.peak_ancilla_ELUs_case2)
+
+    # ── Physical qubit values ────────────────────────────────────────────
+    phys_vals = [report.total_phys_qubits_case1, report.total_phys_qubits_case2]
+    if has3:
+        phys_vals.append(report.total_phys_qubits_case3)
+    if has4:
+        phys_vals.append(report.total_phys_qubits_case1)
+    if has5:
+        phys_vals.append(report.total_phys_qubits_case2)
+
+    # ── Draw panels ──────────────────────────────────────────────────────
+    use_stacked = has_limited and any(s > 0 for s in swap_vals)
+    _panel(axes[0], tock_vals, cases, colors,
+           "Total Tocks\n(logical time steps)", "Tocks",
+           stacked_bottom=swap_vals if use_stacked else None)
+    _panel(axes[1], anc_vals, cases, colors,
            "Peak Ancilla ELUs\n(simultaneous demand)", "ELUs")
-    _panel(axes[2], phys_vals,
+    _panel(axes[2], phys_vals, cases, colors,
            f"Total Physical Qubits\n(d={report.code_distance}, "
            f"{report.phys_per_ELU}/ELU)",
            "Physical qubits", fmt="{:,}")
-
-    # Tock-ratio annotation on Case 2 bar
-    if report.tock_ratio_c2_c1 < float("inf"):
-        axes[0].annotate(
-            f"×{report.tock_ratio_c2_c1:.1f}",
-            xy=(1, report.tocks_case2),
-            xytext=(0.55 if has3 else 0.62, report.tocks_case2 * 1.16),
-            arrowprops=dict(arrowstyle="->", color="#666", lw=1.2),
-            fontsize=9, fontweight="bold", ha="center", color="#444",
-        )
-    # Tock-ratio annotation on Case 3 bar
-    if has3 and report.tock_ratio_c3_c1 is not None and report.tock_ratio_c3_c1 < float("inf"):
-        axes[0].annotate(
-            f"×{report.tock_ratio_c3_c1:.1f}",
-            xy=(2, report.tocks_case3),
-            xytext=(1.65, report.tocks_case3 * 1.16),
-            arrowprops=dict(arrowstyle="->", color="#666", lw=1.2),
-            fontsize=9, fontweight="bold", ha="center", color="#444",
-        )
 
     plt.tight_layout()
     _save_or_show(fig, save_path, "dashboard", display)
