@@ -23,6 +23,7 @@ Usage
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass, field
 from itertools import combinations
 from typing import Any
 
@@ -1223,3 +1224,494 @@ class CZSchedulerFixedAncilla(CZScheduler):
 
         if visualize:
             self.show_overview()    # inherited — edge-colouring overview
+
+
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  CASE 5 — CZ Gates + Limited Connectivity                          ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+#
+# Inherits edge colouring from CZScheduler.  For each colour class (round),
+# SWAP-routes non-adjacent qubit pairs through the switch topology S before
+# executing CZ gates.  Qubit positions evolve over time (leave-in-place).
+#
+# Total Tocks = Σᵢ (swap_layers_i + 2)
+
+@dataclass
+class RoutedRound:
+    """Result of SWAP-routing one CZ colour class on topology S."""
+    round_idx:      int
+    original_edges: list[tuple]                          # logical qubit pairs
+    swap_layers:    list[list[tuple]] = field(default_factory=list)   # parallel SWAP layers (slot pairs)
+    cz_slot_pairs:  list[tuple] = field(default_factory=list)        # slot pairs for CZ execution
+    swap_tocks:     int = 0
+    cz_tocks:       int = 2
+    total_tocks:    int = 2
+
+
+@dataclass
+class RoutedTock:
+    """Result of SWAP-routing one MPP measurement group on topology S."""
+    measurements:   list[dict]
+    swap_layers:    list[list[tuple]] = field(default_factory=list)
+    swap_tocks:     int = 0
+    mpp_tocks:      int = 1
+    total_tocks:    int = 1
+
+
+class CZSchedulerLimited(CZScheduler):
+    """
+    Case 5 — CZ-gate graph-state generation with limited connectivity.
+
+    Inherits greedy edge-colouring from CZScheduler.  For each colour class
+    (CZ round), computes SWAP routing on the switch topology S to bring
+    non-adjacent qubit pairs together before executing the CZ gates.
+
+    Qubit positions evolve over time (leave-in-place after SWAPs).
+
+    Parameters
+    ----------
+    graph     : nx.Graph — logical interaction graph G
+    topology  : SwitchTopology — physical switch graph S
+    placement : dict[int, int] — initial logical-qubit → slot mapping
+    """
+
+    def __init__(
+        self,
+        graph: nx.Graph,
+        topology: "SwitchTopology",
+        placement: dict[int, int],
+    ) -> None:
+        super().__init__(graph)
+        self.topology = topology
+        self.initial_placement = dict(placement)
+        # Working placement (evolves as SWAPs are applied)
+        self.logical_to_slot: dict[int, int] = dict(placement)
+        self.slot_to_logical: dict[int, int | None] = {
+            s: None for s in topology.S.nodes
+        }
+        for q, s in placement.items():
+            self.slot_to_logical[s] = q
+
+        self.routed_rounds: list[RoutedRound] = []
+        self.total_swap_tocks: int = 0
+        self.total_cz_tocks: int = 0
+
+    # ------------------------------------------------------------------
+    # SWAP routing for one round
+    # ------------------------------------------------------------------
+
+    def _route_round(self, round_idx: int, edges: list[tuple]) -> RoutedRound:
+        """Route one colour class: SWAP non-adjacent pairs, then CZ."""
+        topo = self.topology
+
+        all_swaps: list[tuple[int, int]] = []
+        # For each CZ(u, v), generate a SWAP chain to make them adjacent
+        # We move u toward v (arbitrary choice; moving the first endpoint)
+        for u, v in edges:
+            slot_u = self.logical_to_slot[u]
+            slot_v = self.logical_to_slot[v]
+            if not topo.are_adjacent(slot_u, slot_v):
+                path = topo.shortest_path(slot_u, slot_v)
+                swaps = topo.swap_chain(path)
+                all_swaps.extend(swaps)
+
+        # Pack SWAPs into parallel layers
+        swap_layers = topo.pack_swap_layers(all_swaps) if all_swaps else []
+
+        # Apply SWAPs to update placement
+        for layer in swap_layers:
+            for sa, sb in layer:
+                qa = self.slot_to_logical[sa]
+                qb = self.slot_to_logical[sb]
+                # Swap contents
+                self.slot_to_logical[sa] = qb
+                self.slot_to_logical[sb] = qa
+                if qa is not None:
+                    self.logical_to_slot[qa] = sb
+                if qb is not None:
+                    self.logical_to_slot[qb] = sa
+
+        # Now all CZ pairs should be adjacent — record slot pairs
+        cz_slot_pairs = []
+        for u, v in edges:
+            cz_slot_pairs.append((self.logical_to_slot[u], self.logical_to_slot[v]))
+
+        swap_tocks = len(swap_layers)
+        return RoutedRound(
+            round_idx=round_idx,
+            original_edges=edges,
+            swap_layers=swap_layers,
+            cz_slot_pairs=cz_slot_pairs,
+            swap_tocks=swap_tocks,
+            cz_tocks=2,
+            total_tocks=swap_tocks + 2,
+        )
+
+    def route_all_rounds(self) -> list[RoutedRound]:
+        """SWAP-route every colour class and return the routed rounds."""
+        if not self.cz_rounds:
+            self.schedule_cz_rounds()
+
+        self.routed_rounds = []
+        for i, edges in enumerate(self.cz_rounds):
+            if not edges:
+                continue
+            rr = self._route_round(i, edges)
+            self.routed_rounds.append(rr)
+
+        self.total_swap_tocks = sum(rr.swap_tocks for rr in self.routed_rounds)
+        self.total_cz_tocks = sum(rr.cz_tocks for rr in self.routed_rounds)
+        return self.routed_rounds
+
+    def n_tocks(self) -> int:
+        return sum(rr.total_tocks for rr in self.routed_rounds)
+
+    # ------------------------------------------------------------------
+    # Console summary
+    # ------------------------------------------------------------------
+
+    def print_summary(self) -> None:
+        total = self.n_tocks()
+        n_t_c2 = 2 * self.chromatic_index
+
+        print("\n" + "=" * 60)
+        print("  CASE 5 — CZ + LIMITED CONNECTIVITY SUMMARY")
+        print("=" * 60)
+        print(f"  Vertices (qubits)      : {len(self.G.nodes)}")
+        print(f"  Edges (CZ gates)       : {len(self.G.edges)}")
+        print(f"  Max degree Δ(G)        : {self.max_degree}")
+        print(f"  Chromatic index χ'(G)  : {self.chromatic_index}")
+        print(f"  Topology               : {self.topology.name}"
+              f"  ({self.topology.n_elus} ELU slots, diam={self.topology.diameter()})")
+        print(f"  CZ rounds              : {len(self.routed_rounds)}")
+        print(f"  Total SWAP Tocks       : {self.total_swap_tocks}")
+        print(f"  Total CZ Tocks         : {self.total_cz_tocks}")
+        print(f"  Total Tocks            : {total}")
+        print(f"  Case 2 Tocks (all→all) : {n_t_c2}  (= 2·χ'(G))")
+        overhead = total - n_t_c2
+        if n_t_c2:
+            print(f"  Overhead vs Case 2     : +{overhead} Tock(s)"
+                  f"  ({overhead / n_t_c2 * 100:.0f}% more)")
+        print("=" * 60)
+
+        for rr in self.routed_rounds:
+            t_start = sum(r.total_tocks for r in self.routed_rounds[:rr.round_idx]) + 1
+            print(f"\n  CZ Round {rr.round_idx + 1}  "
+                  f"({len(rr.original_edges)} edge(s), "
+                  f"{rr.swap_tocks} SWAP + {rr.cz_tocks} CZ Tocks):")
+            if rr.swap_layers:
+                for li, layer in enumerate(rr.swap_layers):
+                    swaps_str = ", ".join(f"SWAP({a},{b})" for a, b in layer)
+                    print(f"    SWAP layer {li + 1}: {swaps_str}")
+            for u, v in sorted(rr.original_edges):
+                su, sv = self.logical_to_slot[u], self.logical_to_slot[v]
+                print(f"    CZ({u},{v})  slots ({su},{sv})")
+
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
+
+    def run(
+        self,
+        visualize:     bool = True,
+        verify_vizing: bool = True,
+    ) -> None:
+        self.schedule_cz_rounds()
+        self.route_all_rounds()
+        self.print_summary()
+
+        if verify_vizing:
+            self.verify_vizing()
+
+        if visualize:
+            self.show_overview()
+
+
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  CASE 4 — MPP Stabilizer + Limited Connectivity                    ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+#
+# Standalone class (does not inherit SubstrateScheduler).
+# MIS reduction reused from SubstrateScheduler.
+# Each stabilizer generator's support set is connected via a Steiner tree
+# on S.  Generators conflict if they share a qubit or a slot in S.
+# Greedy colouring of the conflict graph yields parallel Tock groups.
+# Each Tock group: SWAP routing + MPP measurement.
+
+
+class MPPSchedulerLimited:
+    """
+    Case 4 — MPP stabilizer measurements with limited connectivity.
+
+    Parameters
+    ----------
+    graph     : nx.Graph — logical interaction graph G
+    topology  : SwitchTopology — physical switch graph S
+    placement : dict[int, int] — initial logical-qubit → slot mapping
+    """
+
+    def __init__(
+        self,
+        graph: nx.Graph,
+        topology: "SwitchTopology",
+        placement: dict[int, int],
+    ) -> None:
+        self.G = nx.Graph(graph)
+        self.G.remove_edges_from(nx.selfloop_edges(self.G))
+        self.topology = topology
+        self.initial_placement = dict(placement)
+        self.logical_to_slot: dict[int, int] = dict(placement)
+        self.slot_to_logical: dict[int, int | None] = {
+            s: None for s in topology.S.nodes
+        }
+        for q, s in placement.items():
+            self.slot_to_logical[s] = q
+
+        self.mis: list = []
+        self.to_measure: list = []
+        self.routed_schedule: list[RoutedTock] = []
+        self.total_swap_tocks: int = 0
+        self.total_mpp_tocks: int = 0
+        self._pos: dict = {}
+
+    # ------------------------------------------------------------------
+    # Phase 1 — MIS reduction (reuses SubstrateScheduler logic)
+    # ------------------------------------------------------------------
+
+    def _find_mis(self) -> list:
+        """Compute MIS using the same logic as SubstrateScheduler."""
+        node_list = list(self.G.nodes)
+        n = len(node_list)
+
+        def is_independent(nodes):
+            for i, u in enumerate(nodes):
+                for v in nodes[i + 1:]:
+                    if self.G.has_edge(u, v):
+                        return False
+            return True
+
+        if n <= 20:
+            for size in range(n, 0, -1):
+                for subset in combinations(node_list, size):
+                    if is_independent(subset):
+                        return list(subset)
+            return []
+        return nx.maximal_independent_set(self.G)
+
+    def phase_1_reduction(self) -> None:
+        self.mis = self._find_mis()
+        self.to_measure = [v for v in self.G.nodes if v not in self.mis]
+
+    # ------------------------------------------------------------------
+    # Phase 2 — Build generators and compute Steiner trees
+    # ------------------------------------------------------------------
+
+    def _build_generators(self) -> list[dict]:
+        """For each node to measure, build its stabilizer generator info."""
+        generators = []
+        for v in self.to_measure:
+            neighbors = list(self.G.neighbors(v))
+            support = {v} | set(neighbors)
+            generators.append({
+                "id": v,
+                "neighbors": neighbors,
+                "support": support,
+            })
+        return generators
+
+    def _compute_steiner_slots(self, support: set[int]) -> set[int]:
+        """Map support qubits to slots, compute Steiner tree, return slot set."""
+        terminal_slots = {self.logical_to_slot[q] for q in support}
+        if len(terminal_slots) <= 1:
+            return terminal_slots
+        tree = self.topology.steiner_tree(terminal_slots)
+        return set(tree.nodes)
+
+    # ------------------------------------------------------------------
+    # Phase 3 — Conflict graph + greedy colouring
+    # ------------------------------------------------------------------
+
+    def _build_conflict_graph(
+        self, generators: list[dict], steiner_slots: list[set[int]]
+    ) -> nx.Graph:
+        """Build conflict graph: generators conflict if their support sets
+        share a qubit OR their Steiner trees share a slot.
+        """
+        CG = nx.Graph()
+        CG.add_nodes_from(range(len(generators)))
+
+        for i in range(len(generators)):
+            for j in range(i + 1, len(generators)):
+                # Qubit conflict
+                if generators[i]["support"] & generators[j]["support"]:
+                    CG.add_edge(i, j)
+                # Slot conflict (Steiner trees overlap)
+                elif steiner_slots[i] & steiner_slots[j]:
+                    CG.add_edge(i, j)
+
+        return CG
+
+    @staticmethod
+    def _greedy_color(CG: nx.Graph) -> dict[int, int]:
+        """DSATUR-style greedy colouring of the conflict graph."""
+        coloring: dict[int, int] = {}
+        for node in CG.nodes:
+            used = {coloring[nb] for nb in CG.neighbors(node) if nb in coloring}
+            c = 0
+            while c in used:
+                c += 1
+            coloring[node] = c
+        return coloring
+
+    # ------------------------------------------------------------------
+    # Phase 4 — SWAP routing per Tock group
+    # ------------------------------------------------------------------
+
+    def _route_tock_group(
+        self, generators: list[dict], gen_indices: list[int]
+    ) -> RoutedTock:
+        """Route a group of non-conflicting generators for parallel execution."""
+        topo = self.topology
+        all_swaps: list[tuple[int, int]] = []
+
+        for gi in gen_indices:
+            gen = generators[gi]
+            support = gen["support"]
+            terminal_slots = {self.logical_to_slot[q] for q in support}
+
+            if len(terminal_slots) <= 1:
+                continue
+
+            # Get Steiner tree
+            tree = topo.steiner_tree(terminal_slots)
+
+            # For each qubit in support, if it's not on a terminal of the tree
+            # it's already there. We just need all support qubits on the tree.
+            # Check if any support qubit's slot is NOT in the tree — if so, SWAP.
+            for q in support:
+                slot = self.logical_to_slot[q]
+                if slot not in tree.nodes:
+                    # Find closest tree node and SWAP toward it
+                    closest_tree_node = min(
+                        tree.nodes,
+                        key=lambda tn: topo.distance(slot, tn)
+                    )
+                    path = topo.shortest_path(slot, closest_tree_node)
+                    swaps = topo.swap_chain(path)
+                    all_swaps.extend(swaps)
+
+        # Pack SWAPs into parallel layers
+        swap_layers = topo.pack_swap_layers(all_swaps) if all_swaps else []
+
+        # Apply SWAPs
+        for layer in swap_layers:
+            for sa, sb in layer:
+                qa = self.slot_to_logical[sa]
+                qb = self.slot_to_logical[sb]
+                self.slot_to_logical[sa] = qb
+                self.slot_to_logical[sb] = qa
+                if qa is not None:
+                    self.logical_to_slot[qa] = sb
+                if qb is not None:
+                    self.logical_to_slot[qb] = sa
+
+        measurements = [generators[gi] for gi in gen_indices]
+        swap_tocks = len(swap_layers)
+        return RoutedTock(
+            measurements=measurements,
+            swap_layers=swap_layers,
+            swap_tocks=swap_tocks,
+            mpp_tocks=1,
+            total_tocks=swap_tocks + 1,
+        )
+
+    # ------------------------------------------------------------------
+    # Full scheduling
+    # ------------------------------------------------------------------
+
+    def schedule(self) -> list[RoutedTock]:
+        """Run all phases and produce the routed schedule."""
+        self.phase_1_reduction()
+        generators = self._build_generators()
+
+        # Compute Steiner tree slot sets for current placement
+        steiner_slots = [
+            self._compute_steiner_slots(g["support"]) for g in generators
+        ]
+
+        # Conflict graph + colouring
+        CG = self._build_conflict_graph(generators, steiner_slots)
+        coloring = self._greedy_color(CG)
+
+        if not coloring:
+            self.routed_schedule = []
+            return self.routed_schedule
+
+        n_colors = max(coloring.values()) + 1
+
+        # Group generators by colour class
+        color_groups: list[list[int]] = [[] for _ in range(n_colors)]
+        for gi, c in coloring.items():
+            color_groups[c].append(gi)
+
+        # Route each group
+        self.routed_schedule = []
+        for group in color_groups:
+            if group:
+                rt = self._route_tock_group(generators, group)
+                self.routed_schedule.append(rt)
+
+        self.total_swap_tocks = sum(rt.swap_tocks for rt in self.routed_schedule)
+        self.total_mpp_tocks = sum(rt.mpp_tocks for rt in self.routed_schedule)
+        return self.routed_schedule
+
+    def n_tocks(self) -> int:
+        return sum(rt.total_tocks for rt in self.routed_schedule)
+
+    # ------------------------------------------------------------------
+    # Console summary
+    # ------------------------------------------------------------------
+
+    def print_summary(self) -> None:
+        total = self.n_tocks()
+
+        print("\n" + "=" * 60)
+        print("  CASE 4 — MPP + LIMITED CONNECTIVITY SUMMARY")
+        print("=" * 60)
+        print(f"  Vertices (qubits)      : {len(self.G.nodes)}")
+        print(f"  Edges (interactions)   : {len(self.G.edges)}")
+        print(f"  MIS size               : {len(self.mis)}  {self.mis}")
+        print(f"  Nodes to measure       : {len(self.to_measure)}"
+              f"  {self.to_measure}")
+        print(f"  Topology               : {self.topology.name}"
+              f"  ({self.topology.n_elus} ELU slots, diam={self.topology.diameter()})")
+        print(f"  Tock groups            : {len(self.routed_schedule)}")
+        print(f"  Total SWAP Tocks       : {self.total_swap_tocks}")
+        print(f"  Total MPP Tocks        : {self.total_mpp_tocks}")
+        print(f"  Total Tocks            : {total}")
+        print("=" * 60)
+
+        for ti, rt in enumerate(self.routed_schedule):
+            gen_ids = [m["id"] for m in rt.measurements]
+            print(f"\n  Tock group {ti + 1}  "
+                  f"(generators {gen_ids}, "
+                  f"{rt.swap_tocks} SWAP + {rt.mpp_tocks} MPP Tocks):")
+            if rt.swap_layers:
+                for li, layer in enumerate(rt.swap_layers):
+                    swaps_str = ", ".join(f"SWAP({a},{b})" for a, b in layer)
+                    print(f"    SWAP layer {li + 1}: {swaps_str}")
+            for m in rt.measurements:
+                nbrs = ", ".join(f"Z{n}" for n in m["neighbors"])
+                print(f"    g_{m['id']}: X{m['id']} ⊗ {nbrs}")
+
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
+
+    def run(
+        self,
+        visualize: bool = True,
+        verify_chromatic: bool = True,
+    ) -> None:
+        self.schedule()
+        self.print_summary()

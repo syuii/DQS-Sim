@@ -10,6 +10,10 @@ Usage
     python main.py --graph star  --n 10 --layout --gantt --heatmap --dashboard --occupancy  # display
     python main.py --graph random --n 100 --no-verify   # skip verification (faster)
 
+    # Limited connectivity (Cases 4 & 5)
+    python main.py --graph cycle --n 8 --case all --topology linear --no-verify
+    python main.py --graph star  --n 6 --case limited --topology grid --elus 9
+
     --save-all DIR creates DIR/{graph}_n{n}/ and writes all figures + report.json inside.
     Omit DIR to use the current directory. Individual --save-* flags override specific paths.
 
@@ -24,7 +28,11 @@ import sys
 import networkx as nx
 
 from dqs_sim.cost import compute_report
-from dqs_sim.schedulers import CZScheduler, CZSchedulerFixedAncilla, SubstrateScheduler
+from dqs_sim.schedulers import (
+    CZScheduler, CZSchedulerFixedAncilla, CZSchedulerLimited,
+    MPPSchedulerLimited, SubstrateScheduler,
+)
+from dqs_sim.topology import SwitchTopology, TOPOLOGY_NAMES, PLACEMENT_STRATEGIES
 from dqs_sim.visualizer import (show_comparison_dashboard, show_gantt, show_heatmaps,
                                 show_2d_layout, show_qubit_occupancy,
                                 show_qubit_occupancy_case2, show_qubit_occupancy_case3)
@@ -62,6 +70,9 @@ def build_graph(graph_type: str, n: int, p: float) -> nx.Graph:
 # CLI
 # ---------------------------------------------------------------------------
 
+CASE_CHOICES = ["1", "2", "3", "4", "5", "both", "all", "limited"]
+
+
 def make_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="main.py",
@@ -87,16 +98,29 @@ def make_parser() -> argparse.ArgumentParser:
 
     # ── Simulation ────────────────────────────────────────────────────────────
     s = p.add_argument_group("Simulation")
-    s.add_argument("--case", choices=["1", "2", "3", "both", "all"],
+    s.add_argument("--case", choices=CASE_CHOICES,
                    default="both",
                    help="Scheduling case(s): 1=MPP, 2=CZ unlimited, "
-                        "3=CZ k-ancilla, both=1+2, all=1+2+3")
+                        "3=CZ k-ancilla, 4=MPP limited, 5=CZ limited, "
+                        "both=1+2, all=1+2+3+4+5, limited=4+5")
     s.add_argument("--ancillas", type=int, default=None, metavar="K",
                    help="Ancilla pool size k for Case 3 (--case 3 or all). "
                         "If omitted with --case all, auto-selects k = ⌊peak_colour_class/2⌋. "
                         "If omitted with --case 3, defaults to k=1.")
     s.add_argument("--no-verify", action="store_true",
                    help="Skip chromatic / Vizing verification (faster for large graphs)")
+
+    # ── Limited connectivity ─────────────────────────────────────────────────
+    t = p.add_argument_group("Limited connectivity (Cases 4 & 5)")
+    t.add_argument("--topology", choices=TOPOLOGY_NAMES, default=None,
+                   metavar="TYPE",
+                   help=f"Switch topology ({', '.join(TOPOLOGY_NAMES)}). "
+                        f"Required for --case 4, 5, limited, or all.")
+    t.add_argument("--elus", type=int, default=None, metavar="N",
+                   help="Number of ELU slots (default: |V|). Must be >= |V|.")
+    t.add_argument("--placement", choices=list(PLACEMENT_STRATEGIES),
+                   default="spectral",
+                   help="Initial qubit placement strategy")
 
     # ── Cost estimation ───────────────────────────────────────────────────────
     c = p.add_argument_group("Cost estimation")
@@ -144,12 +168,33 @@ def make_parser() -> argparse.ArgumentParser:
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _needs_limited(case: str) -> bool:
+    return case in ("4", "5", "limited", "all")
+
+
+def _build_topology(args, G: nx.Graph) -> SwitchTopology:
+    n_elus = args.elus or len(G.nodes)
+    if n_elus < len(G.nodes):
+        print(f"  Error: --elus ({n_elus}) must be >= |V| ({len(G.nodes)}).")
+        sys.exit(1)
+    return SwitchTopology(args.topology, n_elus)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 def main() -> None:
     args = make_parser().parse_args()
     verify = not args.no_verify
+
+    # Validate: topology required for limited connectivity
+    if _needs_limited(args.case) and args.topology is None:
+        print("  Error: --topology is required for Cases 4, 5, limited, or all.")
+        sys.exit(1)
 
     # --save-all: auto-create {graph}_n{n}/ and fill in any unset save paths
     if args.save_all:
@@ -173,6 +218,8 @@ def main() -> None:
     scheduler: SubstrateScheduler        | None = None
     cz:        CZScheduler               | None = None
     cz_k:      CZSchedulerFixedAncilla   | None = None
+    mpp_lim:   MPPSchedulerLimited       | None = None
+    cz_lim:    CZSchedulerLimited        | None = None
 
     # ── Case 1 ───────────────────────────────────────────────────────────────
     if args.case in ("1", "both", "all"):
@@ -208,6 +255,32 @@ def main() -> None:
         cz_k = CZSchedulerFixedAncilla(G, k=k)
         cz_k.run(visualize=args.visualize, verify_vizing=verify)
 
+    # ── Cases 4 & 5: build topology + placement ──────────────────────────────
+    topo = None
+    if _needs_limited(args.case):
+        topo = _build_topology(args, G)
+        place_fn = PLACEMENT_STRATEGIES[args.placement]
+        print(f"\n  Switch topology: {topo}")
+        print(f"  Placement: {args.placement}")
+
+    # ── Case 4 ───────────────────────────────────────────────────────────
+    if args.case in ("4", "limited", "all"):
+        placement = place_fn(G, topo)
+        print("\n" + "#" * 60)
+        print("#  CASE 4 — MPP Stabilizer + Limited Connectivity")
+        print("#" * 60)
+        mpp_lim = MPPSchedulerLimited(G, topo, placement)
+        mpp_lim.run(visualize=args.visualize)
+
+    # ── Case 5 ───────────────────────────────────────────────────────────
+    if args.case in ("5", "limited", "all"):
+        placement = place_fn(G, topo)
+        print("\n" + "#" * 60)
+        print("#  CASE 5 — CZ Gates + Limited Connectivity")
+        print("#" * 60)
+        cz_lim = CZSchedulerLimited(G, topo, placement)
+        cz_lim.run(visualize=args.visualize, verify_vizing=verify)
+
     # ── Resource report ──────────────────────────────────────────────────────
     if scheduler is not None and cz is not None:
         report = compute_report(
@@ -216,6 +289,8 @@ def main() -> None:
             code_distance=args.code_distance,
             graph_type=args.graph,
             cz_k=cz_k,
+            mpp_limited=mpp_lim,
+            cz_limited=cz_lim,
         )
 
         print("\n" + "=" * 52)
