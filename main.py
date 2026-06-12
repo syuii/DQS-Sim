@@ -23,10 +23,11 @@ import sys
 
 import networkx as nx
 
-from cost_estimator import compute_report
-from substrate_scheduler import CZScheduler, CZSchedulerFixedAncilla, SubstrateScheduler
-from visualizer import (show_comparison_dashboard, show_gantt, show_heatmaps,
-                        show_2d_layout, show_qubit_occupancy, show_qubit_occupancy_case3)
+from dqs_sim.cost import compute_report
+from dqs_sim.schedulers import CZScheduler, CZSchedulerFixedAncilla, SubstrateScheduler
+from dqs_sim.visualizer import (show_comparison_dashboard, show_gantt, show_heatmaps,
+                                show_2d_layout, show_qubit_occupancy,
+                                show_qubit_occupancy_case2, show_qubit_occupancy_case3)
 
 
 # Graph builders
@@ -130,6 +131,8 @@ def make_parser() -> argparse.ArgumentParser:
                    help="Save 2D patch layout to file")
     o.add_argument("--save-occupancy", metavar="FILE.png",
                    help="Save Case 1 qubit occupancy figure to file")
+    o.add_argument("--save-occupancy2", metavar="FILE.png",
+                   help="Save Case 2 qubit occupancy figure to file")
     o.add_argument("--save-occupancy3", metavar="FILE.png",
                    help="Save Case 3 qubit occupancy figure to file")
     o.add_argument("--save-dashboard", metavar="FILE.png",
@@ -156,6 +159,7 @@ def main() -> None:
         args.save_heatmap   = args.save_heatmap   or os.path.join(folder, "heatmap.png")
         args.save_layout    = args.save_layout    or os.path.join(folder, "layout.png")
         args.save_occupancy  = args.save_occupancy  or os.path.join(folder, "occupancy.png")
+        args.save_occupancy2 = args.save_occupancy2 or os.path.join(folder, "occupancy2.png")
         args.save_occupancy3 = args.save_occupancy3 or os.path.join(folder, "occupancy3.png")
         args.save_dashboard  = args.save_dashboard  or os.path.join(folder, "dashboard.png")
         args.export         = args.export         or os.path.join(folder, "report.json")
@@ -239,6 +243,10 @@ def main() -> None:
         if args.show or args.occupancy or args.save_occupancy:
             show_qubit_occupancy(scheduler,
                                  save_path=args.save_occupancy, display=show)
+
+        if (args.show or args.occupancy or args.save_occupancy2) and cz is not None:
+            show_qubit_occupancy_case2(cz,
+                                       save_path=args.save_occupancy2, display=show)
 
         if (args.show or args.occupancy or args.save_occupancy3) and cz_k is not None:
             show_qubit_occupancy_case3(cz_k,
