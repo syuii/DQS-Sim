@@ -34,7 +34,10 @@ from matplotlib.patches import FancyBboxPatch
 
 if TYPE_CHECKING:
     from dqs_sim.cost import ResourceReport
-    from dqs_sim.schedulers import CZScheduler, CZSchedulerFixedAncilla, SubstrateScheduler
+    from dqs_sim.schedulers import (
+        CZScheduler, CZSchedulerFixedAncilla, CZSchedulerLimited,
+        MPPSchedulerLimited, SubstrateScheduler,
+    )
 
 
 # ── Colour palette (perceptually distinct, print-safe) ──────────────────────
@@ -1388,6 +1391,307 @@ def show_qubit_occupancy_case2(
 
     plt.tight_layout()
     _save_or_show(fig, save_path, "Case 2 qubit occupancy", display)
+
+
+# ============================================================================
+# SWAP Overhead Chart (Cases 4 & 5)
+# ============================================================================
+
+def show_swap_overhead(
+    mpp_lim: "MPPSchedulerLimited | None" = None,
+    cz_lim:  "CZSchedulerLimited | None" = None,
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """Stacked bar chart showing SWAP vs operation Tocks per round/group.
+
+    Left panel  — Case 4 (MPP limited): each bar = one tock group
+    Right panel — Case 5 (CZ limited):  each bar = one CZ round
+    Each bar is split into SWAP Tocks (orange) and operation Tocks (blue).
+    """
+    panels = []
+    if mpp_lim is not None and mpp_lim.routed_schedule:
+        panels.append(("Case 4 — MPP Limited", mpp_lim.routed_schedule,
+                        "Tock Group", "mpp"))
+    if cz_lim is not None and cz_lim.routed_rounds:
+        panels.append(("Case 5 — CZ Limited", cz_lim.routed_rounds,
+                        "CZ Round", "cz"))
+    if not panels:
+        return
+
+    n_panels = len(panels)
+    fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 5),
+                             facecolor=_FIG_BG, squeeze=False)
+    fig.suptitle("SWAP Overhead per Round/Group", fontsize=14, fontweight="bold")
+
+    for idx, (title, schedule, xlabel, mode) in enumerate(panels):
+        ax = axes[0][idx]
+        n = len(schedule)
+        x = np.arange(n)
+
+        if mode == "cz":
+            swap_tocks = [rr.swap_tocks for rr in schedule]
+            op_tocks   = [rr.cz_tocks for rr in schedule]
+            op_label   = "CZ Tocks"
+        else:
+            swap_tocks = [rt.swap_tocks for rt in schedule]
+            op_tocks   = [rt.mpp_tocks for rt in schedule]
+            op_label   = "MPP Tocks"
+
+        bars_swap = ax.bar(x, swap_tocks, color="#DD8452", edgecolor="white",
+                           label="SWAP Tocks", zorder=2)
+        ax.bar(x, op_tocks, bottom=swap_tocks, color="#4C72B0",
+               edgecolor="white", label=op_label, zorder=2)
+
+        ax.set_xlabel(xlabel, fontsize=10)
+        ax.set_ylabel("Tocks", fontsize=10)
+        ax.set_title(title, fontsize=12, fontweight="bold", pad=8)
+        ax.set_xticks(x)
+        ax.set_xticklabels([str(i + 1) for i in x], fontsize=8)
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.grid(axis="y", linestyle="--", alpha=0.25, zorder=0)
+        ax.legend(fontsize=9, frameon=True, framealpha=0.9, loc="upper right")
+
+        # Total annotation
+        total_swap = sum(swap_tocks)
+        total_op = sum(op_tocks)
+        ax.text(0.02, 0.95,
+                f"Total: {total_swap + total_op} Tocks "
+                f"({total_swap} SWAP + {total_op} op)",
+                transform=ax.transAxes, fontsize=9, va="top",
+                color="#444", fontstyle="italic")
+
+    plt.tight_layout()
+    _save_or_show(fig, save_path, "SWAP overhead chart", display)
+
+
+# ============================================================================
+# Topology Layout (Cases 4 & 5)
+# ============================================================================
+
+def show_topology_layout(
+    mpp_lim: "MPPSchedulerLimited | None" = None,
+    cz_lim:  "CZSchedulerLimited | None" = None,
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """Draw the physical switch topology S with qubit placement shown.
+
+    Each node = ELU slot.  Nodes hosting a logical qubit are coloured and
+    labelled with the qubit id.  Empty slots are drawn as hollow circles.
+    Edges represent the physical switch connections.
+
+    Left panel  — initial placement (before any SWAPs)
+    Right panel — final placement (after all SWAPs executed)
+    """
+    import networkx as nx_local
+
+    # Pick whichever scheduler is available
+    sched = mpp_lim or cz_lim
+    if sched is None:
+        return
+
+    topo = sched.topology
+    S = topo.S
+    initial = sched.initial_placement
+    final_l2s = sched.logical_to_slot
+
+    # Layout for the physical graph
+    if topo.name == "grid":
+        side = math.ceil(math.sqrt(topo.n_elus))
+        pos_s = {
+            n: (n % side, -(n // side))
+            for n in S.nodes
+        }
+    elif topo.name == "star":
+        pos_s = nx_local.spring_layout(S, seed=42)
+    elif topo.name == "linear":
+        pos_s = {n: (n, 0) for n in S.nodes}
+    else:
+        pos_s = nx_local.spring_layout(S, seed=42)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7), facecolor=_FIG_BG)
+    fig.suptitle(
+        f"Switch Topology: {topo.name}  ({topo.n_elus} slots, diam={topo.diameter()})",
+        fontsize=14, fontweight="bold",
+    )
+
+    initial_s2l = {}
+    for q, s in initial.items():
+        initial_s2l[s] = q
+    final_s2l = {}
+    for q, s in final_l2s.items():
+        final_s2l[s] = q
+
+    for ax, s2l, title in [
+        (ax1, initial_s2l, "Initial Placement"),
+        (ax2, final_s2l,   "Final Placement (after SWAPs)"),
+    ]:
+        # Node colours
+        node_colors = []
+        for n in S.nodes:
+            if n in s2l:
+                node_colors.append(_PALETTE[s2l[n] % len(_PALETTE)])
+            else:
+                node_colors.append("#F4F4F4")
+
+        node_ec = [
+            _COL_BORDER if n in s2l else "#CCCCCC"
+            for n in S.nodes
+        ]
+
+        nx_local.draw_networkx_edges(S, pos_s, width=1.5, edge_color="#BBBBBB",
+                                     ax=ax, alpha=0.7)
+        nx_local.draw_networkx_nodes(S, pos_s, node_size=600,
+                                     node_color=node_colors,
+                                     edgecolors=node_ec, linewidths=1.5,
+                                     ax=ax)
+
+        # Labels: show "Q{logical}" for occupied slots, "s{slot}" for empty
+        labels = {}
+        for n in S.nodes:
+            if n in s2l:
+                labels[n] = f"Q{s2l[n]}"
+            else:
+                labels[n] = f"s{n}"
+        nx_local.draw_networkx_labels(S, pos_s, labels, font_size=8,
+                                      font_color="#222", ax=ax)
+
+        ax.set_title(title, fontsize=12, fontweight="bold", pad=10)
+        ax.axis("off")
+
+    plt.tight_layout()
+    _save_or_show(fig, save_path, "topology layout", display)
+
+
+# ============================================================================
+# Heatmap for Cases 4 & 5
+# ============================================================================
+
+def _build_heatmap_case5(cz_lim: "CZSchedulerLimited") -> tuple[np.ndarray, list[str]]:
+    """Matrix[slot_row, tock] = 0 (idle) | 1 (SWAP) | 2 (CZ step 1) | 3 (CZ step 2).
+
+    Returns (matrix, x_labels).
+    """
+    topo = cz_lim.topology
+    n_slots = topo.n_elus
+    total_tocks = cz_lim.n_tocks()
+    m = np.zeros((n_slots, total_tocks), dtype=np.int8)
+    x_labels = []
+
+    t = 0
+    for rr in cz_lim.routed_rounds:
+        # SWAP layers
+        for li, layer in enumerate(rr.swap_layers):
+            for sa, sb in layer:
+                m[sa, t] = 1
+                m[sb, t] = 1
+            x_labels.append(f"SW{li+1}")
+            t += 1
+        # CZ step 1 + step 2
+        for su, sv in rr.cz_slot_pairs:
+            m[su, t] = 2
+        x_labels.append("CZ.1")
+        t += 1
+        for su, sv in rr.cz_slot_pairs:
+            m[sv, t] = 3
+        x_labels.append("CZ.2")
+        t += 1
+
+    return m, x_labels
+
+
+def _build_heatmap_case4(mpp_lim: "MPPSchedulerLimited") -> tuple[np.ndarray, list[str]]:
+    """Matrix[slot_row, tock] = 0 (idle) | 1 (SWAP) | 2 (MPP measure).
+
+    Returns (matrix, x_labels).
+    """
+    topo = mpp_lim.topology
+    n_slots = topo.n_elus
+    total_tocks = mpp_lim.n_tocks()
+    m = np.zeros((n_slots, total_tocks), dtype=np.int8)
+    x_labels = []
+
+    t = 0
+    for rt in mpp_lim.routed_schedule:
+        for li, layer in enumerate(rt.swap_layers):
+            for sa, sb in layer:
+                m[sa, t] = 1
+                m[sb, t] = 1
+            x_labels.append(f"SW{li+1}")
+            t += 1
+        # MPP measurement tock — mark all slots involved in measurements
+        for meas in rt.measurements:
+            support = meas["support"]
+            for q in support:
+                slot = mpp_lim.logical_to_slot[q]
+                m[slot, t] = 2
+        x_labels.append("MPP")
+        t += 1
+
+    return m, x_labels
+
+
+def show_heatmaps_limited(
+    mpp_lim: "MPPSchedulerLimited | None" = None,
+    cz_lim:  "CZSchedulerLimited | None" = None,
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """Schedule heatmaps for Cases 4 and/or 5 (limited connectivity).
+
+    Rows = ELU slots in the physical topology S.
+    Columns = Tocks.
+    Colour = role: idle / SWAP / operation.
+    """
+    panels = []
+    if mpp_lim is not None and mpp_lim.routed_schedule:
+        mat4, xlbl4 = _build_heatmap_case4(mpp_lim)
+        panels.append((mat4, xlbl4, "Case 4 — MPP Limited", "c4"))
+    if cz_lim is not None and cz_lim.routed_rounds:
+        mat5, xlbl5 = _build_heatmap_case5(cz_lim)
+        panels.append((mat5, xlbl5, "Case 5 — CZ Limited", "c5"))
+    if not panels:
+        return
+
+    n_panels = len(panels)
+    n_slots = (mpp_lim or cz_lim).topology.n_elus
+    height = max(5, min(n_slots * 0.25 + 3, 18))
+    total_cols = sum(m.shape[1] for m, _, _, _ in panels)
+    fig_w = max(12, total_cols * 0.4 + 6)
+
+    fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, height),
+                             facecolor=_FIG_BG, squeeze=False)
+    fig.suptitle("Schedule Heatmaps — Limited Connectivity",
+                 fontsize=14, fontweight="bold")
+
+    # Case 4: white | orange (SWAP) | green (MPP)
+    cmap4 = ListedColormap(["#F4F4F4", "#FFCC80", "#81C784"])
+    legend4 = [
+        mpatches.Patch(facecolor="#F4F4F4", edgecolor="#ccc", label="Idle"),
+        mpatches.Patch(facecolor="#FFCC80", label="SWAP"),
+        mpatches.Patch(facecolor="#81C784", label="MPP measure"),
+    ]
+    # Case 5: white | orange (SWAP) | blue (CZ.1) | deep blue (CZ.2)
+    cmap5 = ListedColormap(["#F4F4F4", "#FFCC80", "#90CAF9", "#1565C0"])
+    legend5 = [
+        mpatches.Patch(facecolor="#F4F4F4", edgecolor="#ccc", label="Idle"),
+        mpatches.Patch(facecolor="#FFCC80", label="SWAP"),
+        mpatches.Patch(facecolor="#90CAF9", label="CZ Step 1"),
+        mpatches.Patch(facecolor="#1565C0", label="CZ Step 2"),
+    ]
+
+    for idx, (mat, xlbl, title, mode) in enumerate(panels):
+        ax = axes[0][idx]
+        cmap = cmap4 if mode == "c4" else cmap5
+        legend = legend4 if mode == "c4" else legend5
+        y_lbl = [f"S{s}" for s in range(n_slots)]
+
+        plot_heatmap(mat, xlbl, y_lbl, title, cmap, legend, ax)
+        ax.set_ylabel("ELU Slot", fontsize=10)
+
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    _save_or_show(fig, save_path, "limited connectivity heatmap", display)
 
 
 # ============================================================================

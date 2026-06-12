@@ -12,7 +12,9 @@ Modules
   topology    : SwitchTopology, placement strategies
   visualizer  : show_gantt, show_heatmaps, show_2d_layout,
                 show_qubit_occupancy, show_qubit_occupancy_case2,
-                show_qubit_occupancy_case3, show_comparison_dashboard
+                show_qubit_occupancy_case3, show_comparison_dashboard,
+                show_swap_overhead, show_topology_layout,
+                show_heatmaps_limited
 """
 
 from dqs_sim.schedulers import (

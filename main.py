@@ -35,7 +35,9 @@ from dqs_sim.schedulers import (
 from dqs_sim.topology import SwitchTopology, TOPOLOGY_NAMES, PLACEMENT_STRATEGIES
 from dqs_sim.visualizer import (show_comparison_dashboard, show_gantt, show_heatmaps,
                                 show_2d_layout, show_qubit_occupancy,
-                                show_qubit_occupancy_case2, show_qubit_occupancy_case3)
+                                show_qubit_occupancy_case2, show_qubit_occupancy_case3,
+                                show_swap_overhead, show_topology_layout,
+                                show_heatmaps_limited)
 
 
 # Graph builders
@@ -161,6 +163,12 @@ def make_parser() -> argparse.ArgumentParser:
                    help="Save Case 3 qubit occupancy figure to file")
     o.add_argument("--save-dashboard", metavar="FILE.png",
                    help="Save dashboard to file")
+    o.add_argument("--save-swap-overhead", metavar="FILE.png",
+                   help="Save SWAP overhead chart (Cases 4/5) to file")
+    o.add_argument("--save-topology", metavar="FILE.png",
+                   help="Save topology layout (Cases 4/5) to file")
+    o.add_argument("--save-heatmap-limited", metavar="FILE.png",
+                   help="Save limited connectivity heatmap (Cases 4/5) to file")
     o.add_argument("--export", metavar="FILE.json",
                    help="Export resource report as JSON")
 
@@ -207,6 +215,9 @@ def main() -> None:
         args.save_occupancy2 = args.save_occupancy2 or os.path.join(folder, "occupancy2.png")
         args.save_occupancy3 = args.save_occupancy3 or os.path.join(folder, "occupancy3.png")
         args.save_dashboard  = args.save_dashboard  or os.path.join(folder, "dashboard.png")
+        args.save_swap_overhead   = args.save_swap_overhead   or os.path.join(folder, "swap_overhead.png")
+        args.save_topology        = args.save_topology        or os.path.join(folder, "topology.png")
+        args.save_heatmap_limited = args.save_heatmap_limited or os.path.join(folder, "heatmap_limited.png")
         args.export         = args.export         or os.path.join(folder, "report.json")
         print(f"  Output folder: {folder}/")
 
@@ -336,6 +347,23 @@ def main() -> None:
             "\n  Note: visualisation flags require Cases 1 and 2 "
             "(use --case both or --case all)."
         )
+
+    # ── Limited connectivity visualizations (Cases 4 & 5) ───────────────────
+    has_limited = mpp_lim is not None or cz_lim is not None
+    if has_limited:
+        show = getattr(args, 'show', False)
+
+        if show or args.save_swap_overhead:
+            show_swap_overhead(mpp_lim=mpp_lim, cz_lim=cz_lim,
+                               save_path=args.save_swap_overhead, display=show)
+
+        if show or args.save_topology:
+            show_topology_layout(mpp_lim=mpp_lim, cz_lim=cz_lim,
+                                 save_path=args.save_topology, display=show)
+
+        if show or args.save_heatmap_limited:
+            show_heatmaps_limited(mpp_lim=mpp_lim, cz_lim=cz_lim,
+                                  save_path=args.save_heatmap_limited, display=show)
 
 
 if __name__ == "__main__":
