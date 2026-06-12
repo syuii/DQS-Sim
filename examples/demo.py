@@ -3,13 +3,14 @@ examples/demo.py
 ================
 Preset demo runs for DQS-Sim.
 
-Runs Cases 1, 2, and 3 across several graph topologies and saves all
+Runs Cases 1–5 across several graph topologies and saves all
 figures + JSON reports to Results/.
 
 Usage
 -----
-    python examples/demo.py                   # all presets
+    python examples/demo.py                   # all presets (Cases 1-3)
     python examples/demo.py --graph star      # one topology only
+    python examples/demo.py --limited         # also run Cases 4 & 5
     python examples/demo.py --show            # display figures interactively too
 """
 
@@ -25,9 +26,13 @@ import networkx as nx
 from dqs_sim import (
     CZScheduler,
     CZSchedulerFixedAncilla,
+    CZSchedulerLimited,
+    MPPSchedulerLimited,
     SubstrateScheduler,
+    SwitchTopology,
     compute_report,
 )
+from dqs_sim.topology import PLACEMENT_STRATEGIES
 from dqs_sim.visualizer import (
     show_comparison_dashboard,
     show_gantt,
@@ -53,7 +58,8 @@ PRESETS = [
 
 
 def run_preset(graph_label: str, G: nx.Graph, k: int,
-               out_root: str, display: bool) -> None:
+               out_root: str, display: bool,
+               limited: bool = False) -> None:
     G.remove_edges_from(nx.selfloop_edges(G))
     n = len(G.nodes)
     folder = os.path.join(out_root, f"{graph_label}_n{n}")
@@ -75,9 +81,28 @@ def run_preset(graph_label: str, G: nx.Graph, k: int,
     cz_k = CZSchedulerFixedAncilla(G, k=k)
     cz_k.run(visualize=False, verify_vizing=False)
 
+    # ── Cases 4 & 5 (limited connectivity) ──────────────────────────────────
+    mpp_lim = None
+    cz_lim = None
+    if limited:
+        place_fn = PLACEMENT_STRATEGIES["spectral"]
+        for topo_name in ("linear", "star", "grid"):
+            topo = SwitchTopology(topo_name, n)
+            placement = place_fn(G, topo)
+
+            print(f"\n  ── {topo_name.upper()} topology ──")
+
+            mpp_lim = MPPSchedulerLimited(G, topo, placement)
+            mpp_lim.run(visualize=False)
+
+            placement = place_fn(G, topo)  # fresh placement for Case 5
+            cz_lim = CZSchedulerLimited(G, topo, placement)
+            cz_lim.run(visualize=False, verify_vizing=False)
+
     # ── Report ───────────────────────────────────────────────────────────────
     report = compute_report(scheduler, cz, code_distance=7,
-                            graph_type=graph_label, cz_k=cz_k)
+                            graph_type=graph_label, cz_k=cz_k,
+                            mpp_limited=mpp_lim, cz_limited=cz_lim)
     report.print_table()
     report.export_json(os.path.join(folder, "report.json"))
 
@@ -113,13 +138,17 @@ def main() -> None:
                    help="Root output directory (default: Results/)")
     p.add_argument("--show", action="store_true",
                    help="Display figures interactively in addition to saving")
+    p.add_argument("--limited", action="store_true",
+                   help="Also run Cases 4 & 5 (limited connectivity) "
+                        "on linear, star, and grid topologies")
     args = p.parse_args()
 
     presets = [(n, G, k) for n, G, k in PRESETS
                if args.graph is None or n == args.graph]
 
     for graph_label, G, k in presets:
-        run_preset(graph_label, G, k, out_root=args.out, display=args.show)
+        run_preset(graph_label, G, k, out_root=args.out,
+                   display=args.show, limited=args.limited)
 
     print(f"\nAll done. Results in {args.out}/")
 
