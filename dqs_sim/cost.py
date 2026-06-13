@@ -96,19 +96,16 @@ class ResourceReport:
     total_phys_qubits_case3: int   | None = None
     tock_ratio_c3_c1:        float | None = None   # tocks_case3 / tocks_case1
 
-    # ── Case 4 (MPP + limited connectivity) — optional ──────────────────────
-    topology_name:           str   | None = None
-    n_elu_slots:             int   | None = None
-    placement_strategy:      str   | None = None
-    tocks_case4:             int   | None = None
-    swap_tocks_case4:        int   | None = None
-    mpp_tocks_case4:         int   | None = None
+    # ── Case 4 (MPP + k-port switch) — optional ───────────────────────────
+    switch_k:                int   | None = None
+    n_switches:              int   | None = None
+    n_groups_case4:          int   | None = None   # number of Tock groups
+    tocks_case4:             int   | None = None   # = n_groups (1 Tock each)
     tock_ratio_c4_c1:        float | None = None
 
-    # ── Case 5 (CZ + limited connectivity) — optional ───────────────────────
-    tocks_case5:             int   | None = None
-    swap_tocks_case5:        int   | None = None
-    cz_tocks_case5:          int   | None = None
+    # ── Case 5 (CZ + k-port switch) — optional ─────────────────────────────
+    n_batches_case5:         int   | None = None   # number of sub-batches
+    tocks_case5:             int   | None = None   # = 2 × n_batches
     tock_ratio_c5_c2:        float | None = None
 
     # -------------------------------------------------------------------------
@@ -203,36 +200,38 @@ class ResourceReport:
                     print(f"║  {str(label):<{W - 2}}║{str(c1):^10}║{str(c2):^10}║")
             print("╚" + "═" * W + "╩" + "═" * 10 + "╩" + "═" * 10 + "╝\n")
 
-        # ── Limited connectivity supplement (Cases 4 & 5) ────────────────────
+        # ── k-Port switch supplement (Cases 4 & 5) ─────────────────────────
         has4 = self.tocks_case4 is not None
         has5 = self.tocks_case5 is not None
         if has4 or has5:
+            k_str    = str(self.switch_k) if self.switch_k else "?"
             c4_tocks = str(self.tocks_case4) if has4 else "—"
-            c4_swap  = str(self.swap_tocks_case4) if has4 else "—"
-            c4_mpp   = str(self.mpp_tocks_case4) if has4 else "—"
+            c4_groups = str(self.n_groups_case4) if has4 else "—"
             c4_ratio = f"{self.tock_ratio_c4_c1:.2f}×" if has4 else "—"
 
-            c5_tocks = str(self.tocks_case5) if has5 else "—"
-            c5_swap  = str(self.swap_tocks_case5) if has5 else "—"
-            c5_cz    = str(self.cz_tocks_case5) if has5 else "—"
-            c5_ratio = f"{self.tock_ratio_c5_c2:.2f}×" if has5 else "—"
+            c5_tocks   = str(self.tocks_case5) if has5 else "—"
+            c5_batches = str(self.n_batches_case5) if has5 else "—"
+            c5_ratio   = f"{self.tock_ratio_c5_c2:.2f}×" if has5 else "—"
 
-            topo_str = self.topology_name or "?"
-            elus_str = str(self.n_elu_slots) if self.n_elu_slots else "?"
+            n_sw = self.n_switches or 1
+            sw_label = f"{n_sw}" if n_sw > 1 else "1"
+            max_cz = str(n_sw * (self.switch_k // 2)) if self.switch_k else "—"
+            if n_sw > 1 and self.switch_k:
+                max_cz += f"  ({n_sw}×{self.switch_k // 2})"
 
             lim_rows = [
-                ("Topology",              topo_str,    topo_str),
-                ("ELU slots",             elus_str,    elus_str),
+                ("Switches",              sw_label,    sw_label),
+                ("Ports / switch  k",     k_str,       k_str),
+                ("Max CZ / sub-batch",    "—",         max_cz),
                 ("─", "─", "─"),
+                ("Groups / Sub-batches",  c4_groups,   c5_batches),
                 ("Total Tocks",           c4_tocks,    c5_tocks),
-                ("  SWAP Tocks",          c4_swap,     c5_swap),
-                ("  Operation Tocks",     c4_mpp,      c5_cz),
                 ("─", "─", "─"),
                 ("Tock ratio  vs unlimited", c4_ratio,  c5_ratio),
             ]
 
             print("╔" + "═" * W + "╦" + "═" * 10 + "╦" + "═" * 10 + "╗")
-            print(f"║  {'LIMITED CONNECTIVITY':<{W - 2}}"
+            print(f"║  {'k-PORT SWITCH':<{W - 2}}"
                   f"║{'Case 4':^10}║{'Case 5':^10}║")
             print("╠" + "═" * W + "╬" + "═" * 10 + "╬" + "═" * 10 + "╣")
             for label, c4, c5 in lim_rows:
@@ -303,37 +302,33 @@ def compute_report(
         s3_ratio = s3_tocks / tocks_c1 if tocks_c1 > 0 else float("inf")
 
     # ── Case 4 (optional) ────────────────────────────────────────────────────
-    s4_topo = None
-    s4_elus = None
-    s4_place = None
-    s4_tocks = None
-    s4_swap = None
-    s4_mpp = None
-    s4_ratio = None
+    s4_k       = None
+    s4_groups  = None
+    s4_tocks   = None
+    s4_ratio   = None
+
+    s4_nsw     = None
 
     if mpp_limited is not None:
-        s4_topo  = mpp_limited.topology.name
-        s4_elus  = mpp_limited.topology.n_elus
-        s4_place = "spectral"  # recorded at call site if needed
-        s4_tocks = mpp_limited.n_tocks()
-        s4_swap  = mpp_limited.total_swap_tocks
-        s4_mpp   = mpp_limited.total_mpp_tocks
-        s4_ratio = s4_tocks / tocks_c1 if tocks_c1 > 0 else float("inf")
+        s4_k      = mpp_limited.switch.k
+        s4_nsw    = mpp_limited.switch.n_switches
+        s4_groups = len(mpp_limited.scheduled_groups)
+        s4_tocks  = mpp_limited.n_tocks()
+        s4_ratio  = s4_tocks / tocks_c1 if tocks_c1 > 0 else float("inf")
 
     # ── Case 5 (optional) ────────────────────────────────────────────────────
-    s5_tocks = None
-    s5_swap = None
-    s5_cz = None
-    s5_ratio = None
+    s5_batches = None
+    s5_tocks   = None
+    s5_ratio   = None
 
     if cz_limited is not None:
-        if s4_topo is None:
-            s4_topo  = cz_limited.topology.name
-            s4_elus  = cz_limited.topology.n_elus
-        s5_tocks = cz_limited.n_tocks()
-        s5_swap  = cz_limited.total_swap_tocks
-        s5_cz    = cz_limited.total_cz_tocks
-        s5_ratio = s5_tocks / tocks_c2 if tocks_c2 > 0 else float("inf")
+        if s4_k is None:
+            s4_k = cz_limited.switch.k
+        if s4_nsw is None:
+            s4_nsw = cz_limited.switch.n_switches
+        s5_batches = len(cz_limited.scheduled_batches)
+        s5_tocks   = cz_limited.n_tocks()
+        s5_ratio   = s5_tocks / tocks_c2 if tocks_c2 > 0 else float("inf")
 
     return ResourceReport(
         graph_type               = graph_type,
@@ -362,15 +357,13 @@ def compute_report(
         total_phys_qubits_case3  = s3_phys,
         tock_ratio_c3_c1         = s3_ratio,
         # Case 4
-        topology_name            = s4_topo,
-        n_elu_slots              = s4_elus,
+        switch_k                 = s4_k,
+        n_switches               = s4_nsw,
+        n_groups_case4           = s4_groups,
         tocks_case4              = s4_tocks,
-        swap_tocks_case4         = s4_swap,
-        mpp_tocks_case4          = s4_mpp,
         tock_ratio_c4_c1         = s4_ratio,
         # Case 5
+        n_batches_case5          = s5_batches,
         tocks_case5              = s5_tocks,
-        swap_tocks_case5         = s5_swap,
-        cz_tocks_case5           = s5_cz,
         tock_ratio_c5_c2         = s5_ratio,
     )

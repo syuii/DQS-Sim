@@ -3,16 +3,18 @@ examples/demo.py
 ================
 Preset demo runs for DQS-Sim.
 
-Runs Cases 1–5 across several graph topologies and saves all
+Runs Cases 1-5 across several graph topologies and saves all
 figures + JSON reports to Results/.
 
 Usage
 -----
     python examples/demo.py                   # all presets (Cases 1-3)
     python examples/demo.py --graph star      # one topology only
-    python examples/demo.py --limited         # also run Cases 4 & 5
+    python examples/demo.py --limited         # also run Cases 4 & 5 (k-port switch)
+    python examples/demo.py --switch-k 4      # set switch port count
     python examples/demo.py --show            # display figures interactively too
 """
+from __future__ import annotations
 
 import argparse
 import os
@@ -27,17 +29,18 @@ from dqs_sim import (
     CZScheduler,
     CZSchedulerFixedAncilla,
     CZSchedulerLimited,
+    KPortSwitch,
     MPPSchedulerLimited,
     SubstrateScheduler,
-    SwitchTopology,
     compute_report,
 )
-from dqs_sim.topology import PLACEMENT_STRATEGIES
 from dqs_sim.visualizer import (
     show_comparison_dashboard,
     show_gantt,
     show_heatmaps,
+    show_heatmaps_limited,
     show_2d_layout,
+    show_port_utilization,
     show_qubit_occupancy,
     show_qubit_occupancy_case2,
     show_qubit_occupancy_case3,
@@ -59,7 +62,7 @@ PRESETS = [
 
 def run_preset(graph_label: str, G: nx.Graph, k: int,
                out_root: str, display: bool,
-               limited: bool = False) -> None:
+               limited: bool = False, switch_k: int | None = None) -> None:
     G.remove_edges_from(nx.selfloop_edges(G))
     n = len(G.nodes)
     folder = os.path.join(out_root, f"{graph_label}_n{n}")
@@ -81,23 +84,20 @@ def run_preset(graph_label: str, G: nx.Graph, k: int,
     cz_k = CZSchedulerFixedAncilla(G, k=k)
     cz_k.run(visualize=False, verify_vizing=False)
 
-    # ── Cases 4 & 5 (limited connectivity) ──────────────────────────────────
+    # ── Cases 4 & 5 (k-port switch) ────────────────────────────────────────
     mpp_lim = None
     cz_lim = None
     if limited:
-        place_fn = PLACEMENT_STRATEGIES["spectral"]
-        for topo_name in ("linear", "star", "grid"):
-            topo = SwitchTopology(topo_name, n)
-            placement = place_fn(G, topo)
+        sk = switch_k if switch_k is not None else max(2, n // 2)
+        n_elus = n * 2
+        switch = KPortSwitch(k=sk, n_elus=n_elus)
+        print(f"\n  ── k-PORT SWITCH: {switch} ──")
 
-            print(f"\n  ── {topo_name.upper()} topology ──")
+        mpp_lim = MPPSchedulerLimited(G, switch)
+        mpp_lim.run(visualize=False)
 
-            mpp_lim = MPPSchedulerLimited(G, topo, placement)
-            mpp_lim.run(visualize=False)
-
-            placement = place_fn(G, topo)  # fresh placement for Case 5
-            cz_lim = CZSchedulerLimited(G, topo, placement)
-            cz_lim.run(visualize=False, verify_vizing=False)
+        cz_lim = CZSchedulerLimited(G, switch)
+        cz_lim.run(visualize=False, verify_vizing=False)
 
     # ── Report ───────────────────────────────────────────────────────────────
     report = compute_report(scheduler, cz, code_distance=7,
@@ -126,6 +126,14 @@ def run_preset(graph_label: str, G: nx.Graph, k: int,
                               save_path=os.path.join(folder, "dashboard.png"),
                               display=display)
 
+    if limited and (mpp_lim is not None or cz_lim is not None):
+        show_port_utilization(mpp_lim=mpp_lim, cz_lim=cz_lim,
+                              save_path=os.path.join(folder, "port_util.png"),
+                              display=display)
+        show_heatmaps_limited(mpp_lim=mpp_lim, cz_lim=cz_lim,
+                              save_path=os.path.join(folder, "heatmap_limited.png"),
+                              display=display)
+
     print(f"  Saved → {folder}/")
 
 
@@ -139,8 +147,10 @@ def main() -> None:
     p.add_argument("--show", action="store_true",
                    help="Display figures interactively in addition to saving")
     p.add_argument("--limited", action="store_true",
-                   help="Also run Cases 4 & 5 (limited connectivity) "
-                        "on linear, star, and grid topologies")
+                   help="Also run Cases 4 & 5 (k-port switch)")
+    p.add_argument("--switch-k", type=int, default=None,
+                   help="Switch port count for Cases 4 & 5 "
+                        "(default: |V|/2)")
     args = p.parse_args()
 
     presets = [(n, G, k) for n, G, k in PRESETS
@@ -148,7 +158,8 @@ def main() -> None:
 
     for graph_label, G, k in presets:
         run_preset(graph_label, G, k, out_root=args.out,
-                   display=args.show, limited=args.limited)
+                   display=args.show, limited=args.limited,
+                   switch_k=args.switch_k)
 
     print(f"\nAll done. Results in {args.out}/")
 

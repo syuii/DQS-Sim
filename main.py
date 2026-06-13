@@ -10,9 +10,9 @@ Usage
     python main.py --graph star  --n 10 --layout --gantt --heatmap --dashboard --occupancy  # display
     python main.py --graph random --n 100 --no-verify   # skip verification (faster)
 
-    # Limited connectivity (Cases 4 & 5)
-    python main.py --graph cycle --n 8 --case all --topology linear --no-verify
-    python main.py --graph star  --n 6 --case limited --topology grid --elus 9
+    # k-port switch (Cases 4 & 5)
+    python main.py --graph cycle --n 8 --case all --switch-k 4 --no-verify
+    python main.py --graph star  --n 6 --case limited --switch-k 6
 
     --save-all DIR creates DIR/{graph}_n{n}/ and writes all figures + report.json inside.
     Omit DIR to use the current directory. Individual --save-* flags override specific paths.
@@ -32,12 +32,12 @@ from dqs_sim.schedulers import (
     CZScheduler, CZSchedulerFixedAncilla, CZSchedulerLimited,
     MPPSchedulerLimited, SubstrateScheduler,
 )
-from dqs_sim.topology import SwitchTopology, TOPOLOGY_NAMES, PLACEMENT_STRATEGIES
+from dqs_sim.topology import KPortSwitch
 from dqs_sim.visualizer import (show_comparison_dashboard, show_gantt, show_heatmaps,
                                 show_2d_layout, show_qubit_occupancy,
                                 show_qubit_occupancy_case2, show_qubit_occupancy_case3,
-                                show_swap_overhead, show_topology_layout,
-                                show_heatmaps_limited)
+                                show_qubit_occupancy_case4, show_qubit_occupancy_case5,
+                                show_port_utilization, show_heatmaps_limited)
 
 
 # Graph builders
@@ -103,7 +103,7 @@ def make_parser() -> argparse.ArgumentParser:
     s.add_argument("--case", choices=CASE_CHOICES,
                    default="both",
                    help="Scheduling case(s): 1=MPP, 2=CZ unlimited, "
-                        "3=CZ k-ancilla, 4=MPP limited, 5=CZ limited, "
+                        "3=CZ k-ancilla, 4=MPP k-port, 5=CZ k-port, "
                         "both=1+2, all=1+2+3+4+5, limited=4+5")
     s.add_argument("--ancillas", type=int, default=None, metavar="K",
                    help="Ancilla pool size k for Case 3 (--case 3 or all). "
@@ -112,17 +112,16 @@ def make_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-verify", action="store_true",
                    help="Skip chromatic / Vizing verification (faster for large graphs)")
 
-    # ── Limited connectivity ─────────────────────────────────────────────────
-    t = p.add_argument_group("Limited connectivity (Cases 4 & 5)")
-    t.add_argument("--topology", choices=TOPOLOGY_NAMES, default=None,
-                   metavar="TYPE",
-                   help=f"Switch topology ({', '.join(TOPOLOGY_NAMES)}). "
-                        f"Required for --case 4, 5, limited, or all.")
-    t.add_argument("--elus", type=int, default=None, metavar="N",
-                   help="Number of ELU slots (default: |V|). Must be >= |V|.")
-    t.add_argument("--placement", choices=list(PLACEMENT_STRATEGIES),
-                   default="spectral",
-                   help="Initial qubit placement strategy")
+    # ── k-port switch (Cases 4 & 5) ─────────────────────────────────────────
+    t = p.add_argument_group("k-port switch (Cases 4 & 5)")
+    t.add_argument("--switch-k", type=int, default=None, metavar="K",
+                   help="Ports per switch (simultaneously connected ELUs). "
+                        "Required for --case 4, 5, limited, or all. "
+                        "Each CZ step uses 2 ports; each MPP uses |support| ports.")
+    t.add_argument("--switches", type=int, default=1, metavar="S",
+                   help="Number of parallel switches (default: 1). "
+                        "Each switch independently connects k ELUs per Tock. "
+                        "ELUs on the same switch can interact; different switches cannot.")
 
     # ── Cost estimation ───────────────────────────────────────────────────────
     c = p.add_argument_group("Cost estimation")
@@ -163,12 +162,14 @@ def make_parser() -> argparse.ArgumentParser:
                    help="Save Case 3 qubit occupancy figure to file")
     o.add_argument("--save-dashboard", metavar="FILE.png",
                    help="Save dashboard to file")
-    o.add_argument("--save-swap-overhead", metavar="FILE.png",
-                   help="Save SWAP overhead chart (Cases 4/5) to file")
-    o.add_argument("--save-topology", metavar="FILE.png",
-                   help="Save topology layout (Cases 4/5) to file")
+    o.add_argument("--save-occupancy4", metavar="FILE.png",
+                   help="Save Case 4 per-tock occupancy figure to file")
+    o.add_argument("--save-occupancy5", metavar="FILE.png",
+                   help="Save Case 5 per-tock occupancy figure to file")
+    o.add_argument("--save-port-util", metavar="FILE.png",
+                   help="Save port utilization chart (Cases 4/5) to file")
     o.add_argument("--save-heatmap-limited", metavar="FILE.png",
-                   help="Save limited connectivity heatmap (Cases 4/5) to file")
+                   help="Save k-port heatmap (Cases 4/5) to file")
     o.add_argument("--export", metavar="FILE.json",
                    help="Export resource report as JSON")
 
@@ -183,12 +184,21 @@ def _needs_limited(case: str) -> bool:
     return case in ("4", "5", "limited", "all")
 
 
-def _build_topology(args, G: nx.Graph) -> SwitchTopology:
-    n_elus = args.elus or len(G.nodes)
-    if n_elus < len(G.nodes):
-        print(f"  Error: --elus ({n_elus}) must be >= |V| ({len(G.nodes)}).")
-        sys.exit(1)
-    return SwitchTopology(args.topology, n_elus)
+def _build_switch(args, G: nx.Graph) -> KPortSwitch:
+    """Build a KPortSwitch, auto-selecting k if not provided."""
+    n = len(G.nodes)
+    k = args.switch_k
+    if k is None:
+        # Default: must fit largest stabilizer (|support| data + 1 ancilla)
+        max_support = 1 + max((d for _, d in G.degree()), default=0)
+        min_k = max_support + 1  # data + 1 ancilla ELU
+        k = max(min_k, n)
+        print(f"  [Switch] --switch-k not set. Auto-selecting k={k} "
+              f"(min ports={max_support}+1anc={min_k}).")
+    n_sw = args.switches
+    # n_elus = data ELUs + generous ancilla pool
+    n_elus = n * 2   # data + up to |V| ancillas
+    return KPortSwitch(k=k, n_elus=n_elus, n_switches=n_sw)
 
 
 # ---------------------------------------------------------------------------
@@ -198,11 +208,6 @@ def _build_topology(args, G: nx.Graph) -> SwitchTopology:
 def main() -> None:
     args = make_parser().parse_args()
     verify = not args.no_verify
-
-    # Validate: topology required for limited connectivity
-    if _needs_limited(args.case) and args.topology is None:
-        print("  Error: --topology is required for Cases 4, 5, limited, or all.")
-        sys.exit(1)
 
     # --save-all: auto-create {graph}_n{n}/ and fill in any unset save paths
     if args.save_all:
@@ -215,8 +220,9 @@ def main() -> None:
         args.save_occupancy2 = args.save_occupancy2 or os.path.join(folder, "occupancy2.png")
         args.save_occupancy3 = args.save_occupancy3 or os.path.join(folder, "occupancy3.png")
         args.save_dashboard  = args.save_dashboard  or os.path.join(folder, "dashboard.png")
-        args.save_swap_overhead   = args.save_swap_overhead   or os.path.join(folder, "swap_overhead.png")
-        args.save_topology        = args.save_topology        or os.path.join(folder, "topology.png")
+        args.save_occupancy4      = args.save_occupancy4      or os.path.join(folder, "occupancy4.png")
+        args.save_occupancy5      = args.save_occupancy5      or os.path.join(folder, "occupancy5.png")
+        args.save_port_util       = args.save_port_util       or os.path.join(folder, "port_util.png")
         args.save_heatmap_limited = args.save_heatmap_limited or os.path.join(folder, "heatmap_limited.png")
         args.export         = args.export         or os.path.join(folder, "report.json")
         print(f"  Output folder: {folder}/")
@@ -266,30 +272,33 @@ def main() -> None:
         cz_k = CZSchedulerFixedAncilla(G, k=k)
         cz_k.run(visualize=args.visualize, verify_vizing=verify)
 
-    # ── Cases 4 & 5: build topology + placement ──────────────────────────────
-    topo = None
+    # ── Cases 4 & 5: build k-port switch ─────────────────────────────────────
+    switch = None
     if _needs_limited(args.case):
-        topo = _build_topology(args, G)
-        place_fn = PLACEMENT_STRATEGIES[args.placement]
-        print(f"\n  Switch topology: {topo}")
-        print(f"  Placement: {args.placement}")
+        switch = _build_switch(args, G)
+        print(f"\n  Switch: {switch}")
 
     # ── Case 4 ───────────────────────────────────────────────────────────
     if args.case in ("4", "limited", "all"):
-        placement = place_fn(G, topo)
-        print("\n" + "#" * 60)
-        print("#  CASE 4 — MPP Stabilizer + Limited Connectivity")
-        print("#" * 60)
-        mpp_lim = MPPSchedulerLimited(G, topo, placement)
-        mpp_lim.run(visualize=args.visualize)
+        max_support = 1 + max((d for _, d in G.degree()), default=0)
+        min_k = max_support + 1  # data + 1 ancilla
+        if switch is not None and min_k > switch.k:
+            print(f"\n  ⚠  Case 4 skipped: largest generator needs "
+                  f"{max_support} data + 1 ancilla = {min_k} ports "
+                  f"> k={switch.k}. Use --switch-k {min_k} or higher.")
+        else:
+            print("\n" + "#" * 60)
+            print("#  CASE 4 — MPP Stabilizer + k-Port Switch")
+            print("#" * 60)
+            mpp_lim = MPPSchedulerLimited(G, switch)
+            mpp_lim.run(visualize=args.visualize)
 
     # ── Case 5 ───────────────────────────────────────────────────────────
     if args.case in ("5", "limited", "all"):
-        placement = place_fn(G, topo)
         print("\n" + "#" * 60)
-        print("#  CASE 5 — CZ Gates + Limited Connectivity")
+        print("#  CASE 5 — CZ Gates + k-Port Switch")
         print("#" * 60)
-        cz_lim = CZSchedulerLimited(G, topo, placement)
+        cz_lim = CZSchedulerLimited(G, switch)
         cz_lim.run(visualize=args.visualize, verify_vizing=verify)
 
     # ── Resource report ──────────────────────────────────────────────────────
@@ -348,18 +357,22 @@ def main() -> None:
             "(use --case both or --case all)."
         )
 
-    # ── Limited connectivity visualizations (Cases 4 & 5) ───────────────────
+    # ── k-port switch visualizations (Cases 4 & 5) ──────────────────────────
     has_limited = mpp_lim is not None or cz_lim is not None
     if has_limited:
         show = getattr(args, 'show', False)
 
-        if show or args.save_swap_overhead:
-            show_swap_overhead(mpp_lim=mpp_lim, cz_lim=cz_lim,
-                               save_path=args.save_swap_overhead, display=show)
+        if (show or args.occupancy or args.save_occupancy4) and mpp_lim is not None:
+            show_qubit_occupancy_case4(mpp_lim,
+                                       save_path=args.save_occupancy4, display=show)
 
-        if show or args.save_topology:
-            show_topology_layout(mpp_lim=mpp_lim, cz_lim=cz_lim,
-                                 save_path=args.save_topology, display=show)
+        if (show or args.occupancy or args.save_occupancy5) and cz_lim is not None:
+            show_qubit_occupancy_case5(cz_lim,
+                                       save_path=args.save_occupancy5, display=show)
+
+        if show or args.save_port_util:
+            show_port_utilization(mpp_lim=mpp_lim, cz_lim=cz_lim,
+                                  save_path=args.save_port_util, display=show)
 
         if show or args.save_heatmap_limited:
             show_heatmaps_limited(mpp_lim=mpp_lim, cz_lim=cz_lim,

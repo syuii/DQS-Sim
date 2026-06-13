@@ -9,12 +9,11 @@ Modules
                 CZSchedulerFixedAncilla (Case 3),
                 MPPSchedulerLimited (Case 4), CZSchedulerLimited (Case 5)
   cost        : ResourceReport, compute_report()
-  topology    : SwitchTopology, placement strategies
+  topology    : KPortSwitch (k-port reconfigurable switch)
   visualizer  : show_gantt, show_heatmaps, show_2d_layout,
                 show_qubit_occupancy, show_qubit_occupancy_case2,
                 show_qubit_occupancy_case3, show_comparison_dashboard,
-                show_swap_overhead, show_topology_layout,
-                show_heatmaps_limited
+                show_port_utilization, show_heatmaps_limited
 """
 
 from dqs_sim.schedulers import (
@@ -25,7 +24,7 @@ from dqs_sim.schedulers import (
     SubstrateScheduler,
 )
 from dqs_sim.cost import ResourceReport, compute_report
-from dqs_sim.topology import SwitchTopology
+from dqs_sim.topology import KPortSwitch
 
 __all__ = [
     "SubstrateScheduler",
@@ -35,5 +34,5 @@ __all__ = [
     "MPPSchedulerLimited",
     "ResourceReport",
     "compute_report",
-    "SwitchTopology",
+    "KPortSwitch",
 ]

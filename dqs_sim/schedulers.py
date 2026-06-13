@@ -1227,185 +1227,147 @@ class CZSchedulerFixedAncilla(CZScheduler):
 
 
 # ╔══════════════════════════════════════════════════════════════════════╗
-# ║  CASE 5 — CZ Gates + Limited Connectivity                          ║
+# ║  CASE 5 — CZ Gates + k-Port Switch (Limited Connectivity)          ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 #
-# Inherits edge colouring from CZScheduler.  For each colour class (round),
-# SWAP-routes non-adjacent qubit pairs through the switch topology S before
-# executing CZ gates.  Qubit positions evolve over time (leave-in-place).
+# Inherits edge colouring from CZScheduler.  With a k-port switch, each
+# Tock can connect at most k ELUs.  Each CZ step uses 2 ports (1 data +
+# 1 ancilla), so at most ⌊k/2⌋ CZ gates run per sub-batch.  Colour
+# classes with more edges are split into multiple sub-batches.
 #
-# Total Tocks = Σᵢ (swap_layers_i + 2)
+# Total Tocks = Σᵢ 2 · ⌈|Cᵢ| / ⌊k/2⌋⌉
 
 @dataclass
-class RoutedRound:
-    """Result of SWAP-routing one CZ colour class on topology S."""
-    round_idx:      int
-    original_edges: list[tuple]                          # logical qubit pairs
-    swap_layers:    list[list[tuple]] = field(default_factory=list)   # parallel SWAP layers (slot pairs)
-    cz_slot_pairs:  list[tuple] = field(default_factory=list)        # slot pairs for CZ execution
-    swap_tocks:     int = 0
-    cz_tocks:       int = 2
-    total_tocks:    int = 2
+class ScheduledBatch:
+    """One sub-batch of CZ gates fitting within k switch ports."""
+    colour_idx:   int                # which colour class this came from
+    batch_idx:    int                # global batch index
+    edges:        list[tuple]        # logical qubit pairs in this batch
+    n_ports_used: int = 0            # 2 × len(edges)
+    tocks:        int = 2            # always 2 for CZ
+    # Per-switch edge assignments: switch_edges[si] = edges on switch si
+    switch_edges: list[list[tuple]] = field(default_factory=list)
 
 
 @dataclass
-class RoutedTock:
-    """Result of SWAP-routing one MPP measurement group on topology S."""
-    measurements:   list[dict]
-    swap_layers:    list[list[tuple]] = field(default_factory=list)
-    swap_tocks:     int = 0
-    mpp_tocks:      int = 1
-    total_tocks:    int = 1
+class ScheduledGroup:
+    """One group of MPP measurements fitting within k switch ports."""
+    group_idx:    int                # global group index
+    measurements: list[dict]         # generator dicts
+    support_union: set = field(default_factory=set)  # all ELUs used
+    n_ports_used: int = 0            # len(support_union)
+    tocks:        int = 1            # always 1 for MPP
+    # Per-switch generator assignments: switch_gens[si] = generators on switch si
+    switch_gens:    list[list[dict]] = field(default_factory=list)
+    switch_support: list[set]        = field(default_factory=list)
 
 
 class CZSchedulerLimited(CZScheduler):
     """
-    Case 5 — CZ-gate graph-state generation with limited connectivity.
+    Case 5 — CZ-gate graph-state generation with a k-port switch.
 
-    Inherits greedy edge-colouring from CZScheduler.  For each colour class
-    (CZ round), computes SWAP routing on the switch topology S to bring
-    non-adjacent qubit pairs together before executing the CZ gates.
+    Inherits greedy edge-colouring from CZScheduler.  With a k-port switch,
+    each CZ step needs 2 ports (1 data + 1 ancilla), so at most ⌊k/2⌋ CZ
+    gates can run per sub-batch.  Colour classes with more edges are split
+    into multiple sub-batches, each taking 2 Tocks.
 
-    Qubit positions evolve over time (leave-in-place after SWAPs).
+    No SWAP routing — the switch is reconfigurable and can connect any k
+    ELUs each Tock.
 
     Parameters
     ----------
-    graph     : nx.Graph — logical interaction graph G
-    topology  : SwitchTopology — physical switch graph S
-    placement : dict[int, int] — initial logical-qubit → slot mapping
+    graph   : nx.Graph — logical interaction graph G
+    switch  : KPortSwitch — k-port reconfigurable switch
     """
 
     def __init__(
         self,
         graph: nx.Graph,
-        topology: "SwitchTopology",
-        placement: dict[int, int],
+        switch: "KPortSwitch",
     ) -> None:
         super().__init__(graph)
-        self.topology = topology
-        self.initial_placement = dict(placement)
-        # Working placement (evolves as SWAPs are applied)
-        self.logical_to_slot: dict[int, int] = dict(placement)
-        self.slot_to_logical: dict[int, int | None] = {
-            s: None for s in topology.S.nodes
-        }
-        for q, s in placement.items():
-            self.slot_to_logical[s] = q
-
-        self.routed_rounds: list[RoutedRound] = []
-        self.total_swap_tocks: int = 0
-        self.total_cz_tocks: int = 0
+        self.switch = switch
+        self.scheduled_batches: list[ScheduledBatch] = []
+        self._total_tocks: int = 0
 
     # ------------------------------------------------------------------
-    # SWAP routing for one round
+    # Bin-pack colour classes into sub-batches of ⌊k/2⌋
     # ------------------------------------------------------------------
 
-    def _route_round(self, round_idx: int, edges: list[tuple]) -> RoutedRound:
-        """Route one colour class: SWAP non-adjacent pairs, then CZ."""
-        topo = self.topology
-
-        all_swaps: list[tuple[int, int]] = []
-        # For each CZ(u, v), generate a SWAP chain to make them adjacent
-        # We move u toward v (arbitrary choice; moving the first endpoint)
-        for u, v in edges:
-            slot_u = self.logical_to_slot[u]
-            slot_v = self.logical_to_slot[v]
-            if not topo.are_adjacent(slot_u, slot_v):
-                path = topo.shortest_path(slot_u, slot_v)
-                swaps = topo.swap_chain(path)
-                all_swaps.extend(swaps)
-
-        # Pack SWAPs into parallel layers
-        swap_layers = topo.pack_swap_layers(all_swaps) if all_swaps else []
-
-        # Apply SWAPs to update placement
-        for layer in swap_layers:
-            for sa, sb in layer:
-                qa = self.slot_to_logical[sa]
-                qb = self.slot_to_logical[sb]
-                # Swap contents
-                self.slot_to_logical[sa] = qb
-                self.slot_to_logical[sb] = qa
-                if qa is not None:
-                    self.logical_to_slot[qa] = sb
-                if qb is not None:
-                    self.logical_to_slot[qb] = sa
-
-        # Now all CZ pairs should be adjacent — record slot pairs
-        cz_slot_pairs = []
-        for u, v in edges:
-            cz_slot_pairs.append((self.logical_to_slot[u], self.logical_to_slot[v]))
-
-        swap_tocks = len(swap_layers)
-        return RoutedRound(
-            round_idx=round_idx,
-            original_edges=edges,
-            swap_layers=swap_layers,
-            cz_slot_pairs=cz_slot_pairs,
-            swap_tocks=swap_tocks,
-            cz_tocks=2,
-            total_tocks=swap_tocks + 2,
-        )
-
-    def route_all_rounds(self) -> list[RoutedRound]:
-        """SWAP-route every colour class and return the routed rounds."""
+    def schedule_batches(self) -> list[ScheduledBatch]:
+        """Split each colour class into sub-batches fitting k ports."""
         if not self.cz_rounds:
             self.schedule_cz_rounds()
 
-        self.routed_rounds = []
-        for i, edges in enumerate(self.cz_rounds):
+        max_per = self.switch.max_cz_per_step()
+        per_sw  = self.switch.max_cz_per_switch()
+        n_sw    = self.switch.n_switches
+        if max_per < 1:
+            raise ValueError(f"Switch k={self.switch.k} too small for CZ "
+                             f"(need k >= 2).")
+
+        self.scheduled_batches = []
+        for ci, edges in enumerate(self.cz_rounds):
             if not edges:
                 continue
-            rr = self._route_round(i, edges)
-            self.routed_rounds.append(rr)
+            for bi_start in range(0, len(edges), max_per):
+                batch_edges = edges[bi_start : bi_start + max_per]
+                # Distribute edges across switches round-robin
+                sw_edges: list[list[tuple]] = [[] for _ in range(n_sw)]
+                for ei, edge in enumerate(batch_edges):
+                    sw_edges[ei // per_sw if per_sw > 0 else 0].append(edge)
+                self.scheduled_batches.append(ScheduledBatch(
+                    colour_idx=ci,
+                    batch_idx=len(self.scheduled_batches),
+                    edges=batch_edges,
+                    n_ports_used=2 * len(batch_edges),
+                    switch_edges=sw_edges,
+                ))
 
-        self.total_swap_tocks = sum(rr.swap_tocks for rr in self.routed_rounds)
-        self.total_cz_tocks = sum(rr.cz_tocks for rr in self.routed_rounds)
-        return self.routed_rounds
+        self._total_tocks = 2 * len(self.scheduled_batches)
+        return self.scheduled_batches
 
     def n_tocks(self) -> int:
-        return sum(rr.total_tocks for rr in self.routed_rounds)
+        return self._total_tocks
 
     # ------------------------------------------------------------------
     # Console summary
     # ------------------------------------------------------------------
 
     def print_summary(self) -> None:
-        total = self.n_tocks()
-        n_t_c2 = 2 * self.chromatic_index
+        total   = self.n_tocks()
+        n_t_c2  = 2 * self.chromatic_index
+        max_per = self.switch.max_cz_per_step()
 
         print("\n" + "=" * 60)
-        print("  CASE 5 — CZ + LIMITED CONNECTIVITY SUMMARY")
+        print("  CASE 5 — CZ + k-PORT SWITCH SUMMARY")
         print("=" * 60)
         print(f"  Vertices (qubits)      : {len(self.G.nodes)}")
         print(f"  Edges (CZ gates)       : {len(self.G.edges)}")
         print(f"  Max degree Δ(G)        : {self.max_degree}")
         print(f"  Chromatic index χ'(G)  : {self.chromatic_index}")
-        print(f"  Topology               : {self.topology.name}"
-              f"  ({self.topology.n_elus} ELU slots, diam={self.topology.diameter()})")
-        print(f"  CZ rounds              : {len(self.routed_rounds)}")
-        print(f"  Total SWAP Tocks       : {self.total_swap_tocks}")
-        print(f"  Total CZ Tocks         : {self.total_cz_tocks}")
+        print(f"  Switch                 : {self.switch}")
+        n_sw = self.switch.n_switches
+        per_sw = self.switch.max_cz_per_switch()
+        formula = f"⌊k/2⌋" if n_sw == 1 else f"{n_sw}×⌊k/2⌋ = {n_sw}×{per_sw}"
+        print(f"  Max CZ / sub-batch     : {max_per}  (= {formula})")
+        print(f"  Sub-batches            : {len(self.scheduled_batches)}")
         print(f"  Total Tocks            : {total}")
-        print(f"  Case 2 Tocks (all→all) : {n_t_c2}  (= 2·χ'(G))")
+        print(f"  Case 2 Tocks (k=∞)    : {n_t_c2}  (= 2·χ'(G))")
         overhead = total - n_t_c2
         if n_t_c2:
             print(f"  Overhead vs Case 2     : +{overhead} Tock(s)"
                   f"  ({overhead / n_t_c2 * 100:.0f}% more)")
         print("=" * 60)
 
-        for rr in self.routed_rounds:
-            t_start = sum(r.total_tocks for r in self.routed_rounds[:rr.round_idx]) + 1
-            print(f"\n  CZ Round {rr.round_idx + 1}  "
-                  f"({len(rr.original_edges)} edge(s), "
-                  f"{rr.swap_tocks} SWAP + {rr.cz_tocks} CZ Tocks):")
-            if rr.swap_layers:
-                for li, layer in enumerate(rr.swap_layers):
-                    swaps_str = ", ".join(f"SWAP({a},{b})" for a, b in layer)
-                    print(f"    SWAP layer {li + 1}: {swaps_str}")
-            for u, v in sorted(rr.original_edges):
-                su, sv = self.logical_to_slot[u], self.logical_to_slot[v]
-                print(f"    CZ({u},{v})  slots ({su},{sv})")
+        total_ports = self.switch.total_ports
+        for sb in self.scheduled_batches:
+            edge_strs = [f"CZ({u},{v})" for u, v in sb.edges]
+            print(f"\n  Sub-batch {sb.batch_idx + 1}  "
+                  f"(colour {sb.colour_idx + 1}, "
+                  f"{len(sb.edges)} gate(s), "
+                  f"{sb.n_ports_used}/{total_ports} ports, 2 Tocks):")
+            print(f"    {', '.join(edge_strs)}")
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -1417,7 +1379,7 @@ class CZSchedulerLimited(CZScheduler):
         verify_vizing: bool = True,
     ) -> None:
         self.schedule_cz_rounds()
-        self.route_all_rounds()
+        self.schedule_batches()
         self.print_summary()
 
         if verify_vizing:
@@ -1428,50 +1390,41 @@ class CZSchedulerLimited(CZScheduler):
 
 
 # ╔══════════════════════════════════════════════════════════════════════╗
-# ║  CASE 4 — MPP Stabilizer + Limited Connectivity                    ║
+# ║  CASE 4 — MPP Stabilizer + k-Port Switch (Limited Connectivity)    ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 #
 # Standalone class (does not inherit SubstrateScheduler).
-# MIS reduction reused from SubstrateScheduler.
-# Each stabilizer generator's support set is connected via a Steiner tree
-# on S.  Generators conflict if they share a qubit or a slot in S.
-# Greedy colouring of the conflict graph yields parallel Tock groups.
-# Each Tock group: SWAP routing + MPP measurement.
+# MIS reduction → generators → conflict graph (overlapping supports) →
+# greedy colouring → bin-pack each colour class into groups of ≤ k ELUs.
+#
+# Each generator g_v has support {v} ∪ N(v).  All support qubits must
+# be simultaneously connected by the k-port switch.  Non-conflicting
+# generators can share a Tock if their combined unique ELUs ≤ k.
 
 
 class MPPSchedulerLimited:
     """
-    Case 4 — MPP stabilizer measurements with limited connectivity.
+    Case 4 — MPP stabilizer measurements with a k-port switch.
 
     Parameters
     ----------
-    graph     : nx.Graph — logical interaction graph G
-    topology  : SwitchTopology — physical switch graph S
-    placement : dict[int, int] — initial logical-qubit → slot mapping
+    graph   : nx.Graph — logical interaction graph G
+    switch  : KPortSwitch — k-port reconfigurable switch
     """
 
     def __init__(
         self,
         graph: nx.Graph,
-        topology: "SwitchTopology",
-        placement: dict[int, int],
+        switch: "KPortSwitch",
     ) -> None:
         self.G = nx.Graph(graph)
         self.G.remove_edges_from(nx.selfloop_edges(self.G))
-        self.topology = topology
-        self.initial_placement = dict(placement)
-        self.logical_to_slot: dict[int, int] = dict(placement)
-        self.slot_to_logical: dict[int, int | None] = {
-            s: None for s in topology.S.nodes
-        }
-        for q, s in placement.items():
-            self.slot_to_logical[s] = q
+        self.switch = switch
 
         self.mis: list = []
         self.to_measure: list = []
-        self.routed_schedule: list[RoutedTock] = []
-        self.total_swap_tocks: int = 0
-        self.total_mpp_tocks: int = 0
+        self.scheduled_groups: list[ScheduledGroup] = []
+        self._total_tocks: int = 0
         self._pos: dict = {}
 
     # ------------------------------------------------------------------
@@ -1503,7 +1456,7 @@ class MPPSchedulerLimited:
         self.to_measure = [v for v in self.G.nodes if v not in self.mis]
 
     # ------------------------------------------------------------------
-    # Phase 2 — Build generators and compute Steiner trees
+    # Phase 2 — Build generators
     # ------------------------------------------------------------------
 
     def _build_generators(self) -> list[dict]:
@@ -1519,34 +1472,20 @@ class MPPSchedulerLimited:
             })
         return generators
 
-    def _compute_steiner_slots(self, support: set[int]) -> set[int]:
-        """Map support qubits to slots, compute Steiner tree, return slot set."""
-        terminal_slots = {self.logical_to_slot[q] for q in support}
-        if len(terminal_slots) <= 1:
-            return terminal_slots
-        tree = self.topology.steiner_tree(terminal_slots)
-        return set(tree.nodes)
-
     # ------------------------------------------------------------------
     # Phase 3 — Conflict graph + greedy colouring
     # ------------------------------------------------------------------
 
-    def _build_conflict_graph(
-        self, generators: list[dict], steiner_slots: list[set[int]]
-    ) -> nx.Graph:
+    def _build_conflict_graph(self, generators: list[dict]) -> nx.Graph:
         """Build conflict graph: generators conflict if their support sets
-        share a qubit OR their Steiner trees share a slot.
+        share a qubit (must run in separate Tocks).
         """
         CG = nx.Graph()
         CG.add_nodes_from(range(len(generators)))
 
         for i in range(len(generators)):
             for j in range(i + 1, len(generators)):
-                # Qubit conflict
                 if generators[i]["support"] & generators[j]["support"]:
-                    CG.add_edge(i, j)
-                # Slot conflict (Steiner trees overlap)
-                elif steiner_slots[i] & steiner_slots[j]:
                     CG.add_edge(i, j)
 
         return CG
@@ -1564,109 +1503,138 @@ class MPPSchedulerLimited:
         return coloring
 
     # ------------------------------------------------------------------
-    # Phase 4 — SWAP routing per Tock group
+    # Phase 4 — Bin-pack colour classes into k-port groups
     # ------------------------------------------------------------------
 
-    def _route_tock_group(
-        self, generators: list[dict], gen_indices: list[int]
-    ) -> RoutedTock:
-        """Route a group of non-conflicting generators for parallel execution."""
-        topo = self.topology
-        all_swaps: list[tuple[int, int]] = []
+    def _binpack_colour_class(
+        self, generators: list[dict], gen_indices: list[int],
+    ) -> list[ScheduledGroup]:
+        """Bin-pack non-conflicting generators into groups using S switches
+        of k ports each.
+
+        Within a colour class, generators have disjoint supports.  Each
+        generator must fit entirely on ONE switch (|support| ≤ k).  With
+        S switches, up to S generators can run in parallel if they fit on
+        separate switches.
+
+        We use a greedy first-fit approach: maintain S open bins (switches),
+        each tracking its current support set.  For each generator, try to
+        fit it on an existing switch.  If none can fit it, flush all switches
+        as a completed group and start fresh.
+        """
+        k = self.switch.k
+        n_sw = self.switch.n_switches
+        groups: list[ScheduledGroup] = []
+
+        # Each switch tracks its current generators and support
+        sw_gens: list[list[dict]] = [[] for _ in range(n_sw)]
+        sw_support: list[set[int]] = [set() for _ in range(n_sw)]
+
+        def _flush() -> None:
+            """Flush all non-empty switches into a single ScheduledGroup."""
+            all_gens = []
+            all_support: set[int] = set()
+            # Snapshot per-switch assignments before clearing
+            sg_list = [list(sw_gens[si]) for si in range(n_sw)]
+            ss_list = [set(sw_support[si]) for si in range(n_sw)]
+            for si in range(n_sw):
+                all_gens.extend(sw_gens[si])
+                all_support |= sw_support[si]
+                sw_gens[si] = []
+                sw_support[si] = set()
+            if all_gens:
+                # ports = data qubits + 1 ancilla per generator
+                total_ports = sum(
+                    len(ss_list[si]) + len(sg_list[si])
+                    for si in range(n_sw)
+                )
+                groups.append(ScheduledGroup(
+                    group_idx=0,  # renumbered later
+                    measurements=all_gens,
+                    support_union=all_support,
+                    n_ports_used=total_ports,
+                    switch_gens=sg_list,
+                    switch_support=ss_list,
+                ))
 
         for gi in gen_indices:
             gen = generators[gi]
-            support = gen["support"]
-            terminal_slots = {self.logical_to_slot[q] for q in support}
+            placed = False
 
-            if len(terminal_slots) <= 1:
-                continue
+            # Try to fit on an existing switch (first-fit)
+            # Port cost per switch = |support| (data) + n_generators (ancilla)
+            for si in range(n_sw):
+                new_support = sw_support[si] | gen["support"]
+                n_gens = len(sw_gens[si]) + 1  # +1 for this generator
+                if len(new_support) + n_gens <= k:
+                    sw_gens[si].append(gen)
+                    sw_support[si] = new_support
+                    placed = True
+                    break
 
-            # Get Steiner tree
-            tree = topo.steiner_tree(terminal_slots)
+            if not placed:
+                # No switch has room — flush current group, start fresh
+                _flush()
+                sw_gens[0].append(gen)
+                sw_support[0] = gen["support"].copy()
 
-            # For each qubit in support, if it's not on a terminal of the tree
-            # it's already there. We just need all support qubits on the tree.
-            # Check if any support qubit's slot is NOT in the tree — if so, SWAP.
-            for q in support:
-                slot = self.logical_to_slot[q]
-                if slot not in tree.nodes:
-                    # Find closest tree node and SWAP toward it
-                    closest_tree_node = min(
-                        tree.nodes,
-                        key=lambda tn: topo.distance(slot, tn)
-                    )
-                    path = topo.shortest_path(slot, closest_tree_node)
-                    swaps = topo.swap_chain(path)
-                    all_swaps.extend(swaps)
+        # Flush remaining
+        _flush()
 
-        # Pack SWAPs into parallel layers
-        swap_layers = topo.pack_swap_layers(all_swaps) if all_swaps else []
-
-        # Apply SWAPs
-        for layer in swap_layers:
-            for sa, sb in layer:
-                qa = self.slot_to_logical[sa]
-                qb = self.slot_to_logical[sb]
-                self.slot_to_logical[sa] = qb
-                self.slot_to_logical[sb] = qa
-                if qa is not None:
-                    self.logical_to_slot[qa] = sb
-                if qb is not None:
-                    self.logical_to_slot[qb] = sa
-
-        measurements = [generators[gi] for gi in gen_indices]
-        swap_tocks = len(swap_layers)
-        return RoutedTock(
-            measurements=measurements,
-            swap_layers=swap_layers,
-            swap_tocks=swap_tocks,
-            mpp_tocks=1,
-            total_tocks=swap_tocks + 1,
-        )
+        return groups
 
     # ------------------------------------------------------------------
     # Full scheduling
     # ------------------------------------------------------------------
 
-    def schedule(self) -> list[RoutedTock]:
-        """Run all phases and produce the routed schedule."""
+    def schedule(self) -> list[ScheduledGroup]:
+        """Run all phases and produce the scheduled groups."""
         self.phase_1_reduction()
         generators = self._build_generators()
 
-        # Compute Steiner tree slot sets for current placement
-        steiner_slots = [
-            self._compute_steiner_slots(g["support"]) for g in generators
-        ]
+        # Check feasibility: each generator needs |support| + 1 ports
+        for g in generators:
+            if not self.switch.can_fit_support(len(g["support"])):
+                min_k = len(g["support"]) + 1
+                raise ValueError(
+                    f"Generator for node {g['id']} needs "
+                    f"{len(g['support'])} data + 1 ancilla = {min_k} ports "
+                    f"> k={self.switch.k}. "
+                    f"Increase --switch-k to at least {min_k}."
+                )
 
         # Conflict graph + colouring
-        CG = self._build_conflict_graph(generators, steiner_slots)
+        CG = self._build_conflict_graph(generators)
         coloring = self._greedy_color(CG)
 
         if not coloring:
-            self.routed_schedule = []
-            return self.routed_schedule
+            self.scheduled_groups = []
+            self._total_tocks = 0
+            return self.scheduled_groups
 
         n_colors = max(coloring.values()) + 1
 
         # Group generators by colour class
-        color_groups: list[list[int]] = [[] for _ in range(n_colors)]
+        color_classes: list[list[int]] = [[] for _ in range(n_colors)]
         for gi, c in coloring.items():
-            color_groups[c].append(gi)
+            color_classes[c].append(gi)
 
-        # Route each group
-        self.routed_schedule = []
-        for group in color_groups:
-            if group:
-                rt = self._route_tock_group(generators, group)
-                self.routed_schedule.append(rt)
+        # Bin-pack each colour class into k-port groups
+        self.scheduled_groups = []
+        for cc in color_classes:
+            if cc:
+                groups = self._binpack_colour_class(generators, cc)
+                self.scheduled_groups.extend(groups)
 
-        self.total_swap_tocks = sum(rt.swap_tocks for rt in self.routed_schedule)
-        self.total_mpp_tocks = sum(rt.mpp_tocks for rt in self.routed_schedule)
-        return self.routed_schedule
+        # Renumber group indices
+        for i, sg in enumerate(self.scheduled_groups):
+            sg.group_idx = i
+
+        self._total_tocks = len(self.scheduled_groups)  # 1 Tock per group
+        return self.scheduled_groups
 
     def n_tocks(self) -> int:
-        return sum(rt.total_tocks for rt in self.routed_schedule)
+        return self._total_tocks
 
     # ------------------------------------------------------------------
     # Console summary
@@ -1676,31 +1644,28 @@ class MPPSchedulerLimited:
         total = self.n_tocks()
 
         print("\n" + "=" * 60)
-        print("  CASE 4 — MPP + LIMITED CONNECTIVITY SUMMARY")
+        print("  CASE 4 — MPP + k-PORT SWITCH SUMMARY")
         print("=" * 60)
         print(f"  Vertices (qubits)      : {len(self.G.nodes)}")
         print(f"  Edges (interactions)   : {len(self.G.edges)}")
         print(f"  MIS size               : {len(self.mis)}  {self.mis}")
         print(f"  Nodes to measure       : {len(self.to_measure)}"
               f"  {self.to_measure}")
-        print(f"  Topology               : {self.topology.name}"
-              f"  ({self.topology.n_elus} ELU slots, diam={self.topology.diameter()})")
-        print(f"  Tock groups            : {len(self.routed_schedule)}")
-        print(f"  Total SWAP Tocks       : {self.total_swap_tocks}")
-        print(f"  Total MPP Tocks        : {self.total_mpp_tocks}")
+        print(f"  Switch                 : {self.switch}")
+        print(f"  Groups (Tocks)         : {len(self.scheduled_groups)}")
         print(f"  Total Tocks            : {total}")
         print("=" * 60)
 
-        for ti, rt in enumerate(self.routed_schedule):
-            gen_ids = [m["id"] for m in rt.measurements]
-            print(f"\n  Tock group {ti + 1}  "
-                  f"(generators {gen_ids}, "
-                  f"{rt.swap_tocks} SWAP + {rt.mpp_tocks} MPP Tocks):")
-            if rt.swap_layers:
-                for li, layer in enumerate(rt.swap_layers):
-                    swaps_str = ", ".join(f"SWAP({a},{b})" for a, b in layer)
-                    print(f"    SWAP layer {li + 1}: {swaps_str}")
-            for m in rt.measurements:
+        total_ports = self.switch.total_ports
+        n_sw = self.switch.n_switches
+        for sg in self.scheduled_groups:
+            gen_ids = [m["id"] for m in sg.measurements]
+            port_lbl = f"{sg.n_ports_used}/{total_ports} ports"
+            if n_sw > 1:
+                port_lbl += f" across {n_sw} switches"
+            print(f"\n  Group {sg.group_idx + 1}  "
+                  f"(generators {gen_ids}, {port_lbl}, 1 Tock):")
+            for m in sg.measurements:
                 nbrs = ", ".join(f"Z{n}" for n in m["neighbors"])
                 print(f"    g_{m['id']}: X{m['id']} ⊗ {nbrs}")
 
@@ -1711,7 +1676,6 @@ class MPPSchedulerLimited:
     def run(
         self,
         visualize: bool = True,
-        verify_chromatic: bool = True,
     ) -> None:
         self.schedule()
         self.print_summary()
