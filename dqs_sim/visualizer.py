@@ -41,6 +41,10 @@ if TYPE_CHECKING:
     )
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Unified Style System
+# ══════════════════════════════════════════════════════════════════════════════
+
 # ── Colour palette (perceptually distinct, print-safe) ──────────────────────
 _PALETTE = [
     "#4C72B0", "#DD8452", "#55A868", "#C44E52",
@@ -48,13 +52,85 @@ _PALETTE = [
     "#CCB974", "#64B5CD", "#E377C2", "#7F7F7F",
 ]
 
-# Semantic colours
-_COL_IDLE     = "#F4F4F4"   # idle patch fill
-_COL_MIS      = "#A8D8A8"   # MIS (|+⟩ init) fill
-_COL_MEASURE  = "#F4A7A7"   # to-measure fill
-_COL_BORDER   = "#555555"   # default patch border
-_COL_EDGE_OFF = "#DDDDDD"   # idle edge colour
-_FIG_BG       = "white"
+# ── Semantic colours ────────────────────────────────────────────────────────
+_COL_IDLE       = "#F4F4F4"   # idle patch / tile fill
+_COL_IDLE_EDGE  = "#DDDDDD"   # idle patch / tile border
+_COL_IDLE_TEXT  = "#BBBBBB"   # idle tile label text
+_COL_MIS        = "#A8D8A8"   # MIS (|+⟩ init) fill
+_COL_MEASURE    = "#F4A7A7"   # to-measure fill
+_COL_BORDER     = "#555555"   # default patch border
+_COL_EDGE_OFF   = "#DDDDDD"   # idle edge colour
+_COL_EMPTY_FILL = "#F8F8F8"   # empty tile fill (Case 2/3 substrate)
+_COL_EMPTY_EDGE = "#E0E0E0"   # empty tile border
+_FIG_BG         = "white"
+
+# ── Heatmap semantic colours ────────────────────────────────────────────────
+_COL_HM_MPP_LIGHT  = "#90CAF9"   # Case 1 heatmap: Z-neighbour (light)
+_COL_HM_MPP_DARK   = "#1565C0"   # Case 1 heatmap: X-measured (dark)
+_COL_HM_CZ_LIGHT   = "#FFCC80"   # Case 2/3/5 heatmap: CZ step 1
+_COL_HM_CZ_DARK    = "#E65100"   # Case 2/3/5 heatmap: CZ step 2
+
+# ── Node colours for graph views ────────────────────────────────────────────
+_COL_NODE_MIS    = "#4CAF50"   # green: MIS / measured node
+_COL_NODE_MEAS   = "#E53935"   # red: to-measure / measured edge
+_COL_NODE_ACTIVE = "#FFCC80"   # amber: active CZ node
+_COL_NODE_OTHER  = "#FFECB3"   # pale amber: other active node
+_COL_NODE_NBR    = "#FFD54F"   # yellow: neighbour highlight
+_COL_NODE_NBR_EC = "#F9A825"   # dark yellow: neighbour edge
+_COL_NODE_ACT_EC = "#F57C00"   # dark amber: active CZ node edge
+_COL_NODE_OTH_EC = "#FFB74D"   # light amber: other CZ node edge
+
+# ── Switch diagram colours ──────────────────────────────────────────────────
+_SW_COLORS_LIGHT = [
+    "#4CAF50", "#2196F3", "#FF9800", "#9C27B0",
+    "#00BCD4", "#E91E63", "#795548", "#607D8B",
+]
+_SW_COLORS_DARK = [
+    "#E65100", "#1565C0", "#2E7D32", "#6A1B9A",
+    "#00838F", "#C62828", "#4E342E", "#37474F",
+]
+
+# ── Text colours ────────────────────────────────────────────────────────────
+_COL_TEXT_DARK   = "#222222"   # primary dark text (node labels on light bg)
+_COL_TEXT_MED    = "#555555"   # medium text (row labels, axis labels)
+_COL_TEXT_LIGHT  = "#666666"   # secondary text (annotations)
+_COL_TEXT_ON_DARK = "#CCCCCC"  # text on dark backgrounds
+_COL_TEXT_GRID   = "#444444"   # grid lines / separators
+
+# ── Typography ──────────────────────────────────────────────────────────────
+_FS_SUPTITLE = 14              # figure super-title
+_FS_TITLE    = 11              # panel / axes title
+_FS_AXIS     = 10              # axis labels (xlabel, ylabel)
+_FS_TICK     = 8               # tick labels
+_FS_TICK_SM  = 7               # small tick labels (y-axis qubit names)
+_FS_LEGEND   = 8               # legend text
+_FS_ANNOT    = 8               # in-cell text annotations
+_FS_ANNOT_SM = 6               # small annotations (heatmap cells)
+_FS_NODE     = 9               # graph node labels
+_FS_BAR      = 8               # bar chart value labels
+_FS_ROW      = 10              # row labels (Data / Ancilla)
+
+# ── Line widths ─────────────────────────────────────────────────────────────
+_LW_THIN     = 0.6             # heatmap cell borders, dashed outlines
+_LW_NORMAL   = 0.8             # idle tiles, grid lines, default edges
+_LW_MEDIUM   = 1.2             # legend patches, node outlines
+_LW_THICK    = 1.5             # active tiles, graph edges, node patches
+_LW_HEAVY    = 2.0             # emphasis lines (capacity line, separators)
+
+# ── Alpha values ────────────────────────────────────────────────────────────
+_ALPHA_TILE     = 0.88         # active tile fill
+_ALPHA_HM_FILL  = 0.90         # heatmap cell fill
+_ALPHA_HM_LIGHT = 0.35         # heatmap light fill (Z-neighbour)
+_ALPHA_GRID_X   = 0.35         # x-axis grid
+_ALPHA_GRID_Y   = 0.18         # y-axis grid
+_ALPHA_SPAN     = 0.07         # background spans (round separators)
+_ALPHA_EMPTY    = 0.75         # empty tile outline
+_ALPHA_LEGEND   = 0.9          # legend frame
+_ALPHA_BAR      = 0.85         # bar chart bars
+_ALPHA_GRID     = 0.25         # comparison dashboard grid
+
+# ── Overflow legend entry ───────────────────────────────────────────────────
+_COL_OVERFLOW = "#CCCCCC"      # overflow / "other" legend swatch
 
 
 # ============================================================================
@@ -151,7 +227,7 @@ def _draw_patch_layout(
     ax.set_ylim(0, 1)
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.set_title(title, fontsize=12, fontweight="bold", pad=10)
+    ax.set_title(title, fontsize=_FS_TITLE, fontweight="bold", pad=10)
 
     # ── edges ────────────────────────────────────────────────────────────────
     for u, v in edges:
@@ -161,7 +237,7 @@ def _draw_patch_layout(
         ex_v, ey_v = _border_exit(cx_v, cy_v, cx_u, cy_u, hw)
         key = (min(u, v), max(u, v))
         col = edge_col.get(key, _COL_EDGE_OFF)
-        lw  = edge_lw.get(key, 0.8)
+        lw  = edge_lw.get(key, _LW_NORMAL)
         ax.plot([ex_u, ex_v], [ey_u, ey_v],
                 color=col, linewidth=lw,
                 solid_capstyle="round", zorder=1)
@@ -170,7 +246,7 @@ def _draw_patch_layout(
     for node, (cx, cy) in pos.items():
         fc  = node_fill.get(node, _COL_IDLE)
         ec  = node_ec.get(node, _COL_BORDER)
-        lw  = node_lw.get(node, 1.2)
+        lw  = node_lw.get(node, _LW_MEDIUM)
         box = FancyBboxPatch(
             (cx - hw, cy - hw), 2 * hw, 2 * hw,
             boxstyle="round,pad=0.015",
@@ -181,11 +257,10 @@ def _draw_patch_layout(
 
         # Port indicator dots (N / S / E / W communication qubits)
         dot_r = hw * 0.18
-        dot_c = "#AAAAAA"
         for dx, dy in [(0, hw), (0, -hw), (hw, 0), (-hw, 0)]:
             ax.add_patch(plt.Circle(
                 (cx + dx * 0.92, cy + dy * 0.92), dot_r,
-                color=dot_c, zorder=3,
+                color=_COL_IDLE_EDGE, zorder=3,
             ))
 
         # Label
@@ -193,7 +268,7 @@ def _draw_patch_layout(
             ax.text(cx, cy, str(node),
                     ha="center", va="center",
                     fontsize=max(6, min(10, int(hw * 160))),
-                    fontweight="bold", color="#2C3E50", zorder=4)
+                    fontweight="bold", color=_COL_TEXT_DARK, zorder=4)
 
 
 def show_2d_layout(
@@ -250,10 +325,10 @@ def show_2d_layout(
         for nd in G.nodes
     }
     c1_node_ec = {
-        nd: ("#4CAF50" if nd in scheduler.mis else "#E53935")
+        nd: (_COL_NODE_MIS if nd in scheduler.mis else _COL_NODE_MEAS)
         for nd in G.nodes
     }
-    c1_node_lw  = {nd: 1.8 for nd in G.nodes}
+    c1_node_lw  = {nd: _LW_THICK for nd in G.nodes}
     c1_edge_col = {
         (min(u, v), max(u, v)): _PALETTE[edge_tock[(min(u,v),max(u,v))] % len(_PALETTE)]
         if (min(u,v), max(u,v)) in edge_tock else _COL_EDGE_OFF
@@ -261,7 +336,7 @@ def show_2d_layout(
     }
     c1_edge_lw = {
         (min(u, v), max(u, v)): (
-            1.8 if (min(u,v),max(u,v)) in edge_tock else 0.6
+            _LW_THICK if (min(u,v),max(u,v)) in edge_tock else _LW_THIN
         )
         for u, v in all_edges
     }
@@ -269,14 +344,14 @@ def show_2d_layout(
     # ── Case 2 colours ───────────────────────────────────────────────────────
     c2_node_fill = {nd: _COL_IDLE for nd in G.nodes}
     c2_node_ec   = {nd: _COL_BORDER for nd in G.nodes}
-    c2_node_lw   = {nd: 1.2 for nd in G.nodes}
+    c2_node_lw   = {nd: _LW_MEDIUM for nd in G.nodes}
     c2_edge_col  = {
         (min(u, v), max(u, v)): _PALETTE[edge_round[(min(u,v),max(u,v))] % len(_PALETTE)]
         if (min(u,v), max(u,v)) in edge_round else _COL_EDGE_OFF
         for u, v in all_edges
     }
     c2_edge_lw = {
-        (min(u, v), max(u, v)): 2.0
+        (min(u, v), max(u, v)): _LW_HEAVY
         for u, v in all_edges
     }
 
@@ -287,7 +362,7 @@ def show_2d_layout(
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(fig_w, 8), facecolor=_FIG_BG)
     else:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(fig_w, 8), facecolor=_FIG_BG)
-    fig.suptitle("2D ELU Patch Layout", fontsize=15, fontweight="bold", y=1.01)
+    fig.suptitle("2D ELU Patch Layout", fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01)
 
     _draw_patch_layout(
         pos, c1_node_fill, c1_node_lw, c1_node_ec,
@@ -308,10 +383,10 @@ def show_2d_layout(
     # Case 1 node legend
     ax1.legend(
         handles=[
-            mpatches.Patch(facecolor=_COL_MIS,     edgecolor="#4CAF50", lw=1.5, label="MIS — init |+⟩"),
-            mpatches.Patch(facecolor=_COL_MEASURE,  edgecolor="#E53935", lw=1.5, label="Measured"),
+            mpatches.Patch(facecolor=_COL_MIS,     edgecolor=_COL_NODE_MIS,  lw=_LW_THICK, label="MIS — init |+⟩"),
+            mpatches.Patch(facecolor=_COL_MEASURE,  edgecolor=_COL_NODE_MEAS, lw=_LW_THICK, label="Measured"),
         ],
-        fontsize=9, frameon=True, framealpha=0.9,
+        fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND,
         loc="lower left", borderpad=0.8,
     )
 
@@ -324,13 +399,13 @@ def show_2d_layout(
     ]
     if n_tocks > 8:
         ax1_leg2_handles.append(
-            mpatches.Patch(facecolor="#ccc", label=f"… +{n_tocks - 8} more")
+            mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"… +{n_tocks - 8} more")
         )
     ax1.legend(
         handles=ax1_leg2_handles,
-        fontsize=8, frameon=True, framealpha=0.9,
+        fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND,
         loc="lower right", ncol=2, borderpad=0.8,
-        title="Tock", title_fontsize=8,
+        title="Tock", title_fontsize=_FS_LEGEND,
     )
 
     # Case 2 round legend
@@ -342,13 +417,13 @@ def show_2d_layout(
     ]
     if n_rounds > 8:
         ax2_handles.append(
-            mpatches.Patch(facecolor="#ccc", label=f"… +{n_rounds - 8} more")
+            mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"… +{n_rounds - 8} more")
         )
     ax2.legend(
         handles=ax2_handles,
-        fontsize=8, frameon=True, framealpha=0.9,
+        fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND,
         loc="lower right", ncol=2, borderpad=0.8,
-        title="CZ Round", title_fontsize=8,
+        title="CZ Round", title_fontsize=_FS_LEGEND,
     )
 
     # ── Case 3 panel (optional) ──────────────────────────────────────────────
@@ -360,13 +435,13 @@ def show_2d_layout(
         }
         c3_node_fill = {nd: _COL_IDLE   for nd in G.nodes}
         c3_node_ec   = {nd: _COL_BORDER for nd in G.nodes}
-        c3_node_lw   = {nd: 1.2         for nd in G.nodes}
+        c3_node_lw   = {nd: _LW_MEDIUM   for nd in G.nodes}
         c3_edge_col  = {
             (min(u, v), max(u, v)): _PALETTE[edge_batch[(min(u,v),max(u,v))] % len(_PALETTE)]
             if (min(u,v), max(u,v)) in edge_batch else _COL_EDGE_OFF
             for u, v in all_edges
         }
-        c3_edge_lw   = {(min(u, v), max(u, v)): 2.0 for u, v in all_edges}
+        c3_edge_lw   = {(min(u, v), max(u, v)): _LW_HEAVY for u, v in all_edges}
 
         n_batches = len(cz_k.batches)
         _draw_patch_layout(
@@ -384,13 +459,13 @@ def show_2d_layout(
         ]
         if n_batches > 8:
             ax3_handles.append(
-                mpatches.Patch(facecolor="#ccc", label=f"… +{n_batches - 8} more")
+                mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"… +{n_batches - 8} more")
             )
         ax3.legend(
             handles=ax3_handles,
-            fontsize=8, frameon=True, framealpha=0.9,
+            fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND,
             loc="lower right", ncol=2, borderpad=0.8,
-            title="Sub-batch", title_fontsize=8,
+            title="Sub-batch", title_fontsize=_FS_LEGEND,
         )
 
     plt.tight_layout()
@@ -471,29 +546,29 @@ def plot_heatmap(
     # Grid lines between cells
     ax.set_xticks(np.arange(-0.5, n_t, 1), minor=True)
     ax.set_yticks(np.arange(-0.5, n_q, 1), minor=True)
-    ax.grid(which="minor", color="white", linewidth=0.4, zorder=3)
+    ax.grid(which="minor", color="white", linewidth=_LW_THIN, zorder=3)
     ax.tick_params(which="minor", length=0)
 
     # Optional vertical dividers (e.g. every CZ round)
     if vline_every > 0:
         for x in range(vline_every - 1, n_t, vline_every):
-            ax.axvline(x + 0.5, color="#444444", linewidth=0.8, zorder=4)
+            ax.axvline(x + 0.5, color=_COL_TEXT_GRID, linewidth=_LW_NORMAL, zorder=4)
 
     # Smart axis labels
     x_step = max(1, n_t // 25)
     y_step = max(1, n_q // 25)
     ax.set_xticks(range(0, n_t, x_step))
-    ax.set_xticklabels(x_labels[::x_step], fontsize=7, rotation=45, ha="right")
+    ax.set_xticklabels(x_labels[::x_step], fontsize=_FS_TICK_SM, rotation=45, ha="right")
     ax.set_yticks(range(0, n_q, y_step))
-    ax.set_yticklabels(y_labels[::y_step], fontsize=7)
+    ax.set_yticklabels(y_labels[::y_step], fontsize=_FS_TICK_SM)
 
-    ax.set_xlabel("Tock  (logical time step)", fontsize=10)
-    ax.set_ylabel("Qubit / ELU", fontsize=10)
-    ax.set_title(title, fontsize=12, fontweight="bold", pad=8)
+    ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
+    ax.set_ylabel("Qubit / ELU", fontsize=_FS_AXIS)
+    ax.set_title(title, fontsize=_FS_TITLE, fontweight="bold", pad=8)
 
     ax.legend(
         handles=legend_handles,
-        fontsize=8, frameon=True, framealpha=0.9,
+        fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND,
         loc="upper right", bbox_to_anchor=(1.0, -0.14),
         ncol=len(legend_handles), borderpad=0.6,
     )
@@ -530,23 +605,23 @@ def show_heatmaps(
         n_t3 = 0
 
     # Case 1: white | light blue | deep blue
-    cmap1 = ListedColormap(["#F4F4F4", "#90CAF9", "#1565C0"])
+    cmap1 = ListedColormap([_COL_IDLE, _COL_HM_MPP_LIGHT, _COL_HM_MPP_DARK])
     # Case 2: white | amber | deep orange
-    cmap2 = ListedColormap(["#F4F4F4", "#FFCC80", "#E65100"])
+    cmap2 = ListedColormap([_COL_IDLE, _COL_HM_CZ_LIGHT, _COL_HM_CZ_DARK])
 
     x_lbl1 = [f"T{t+1}" for t in range(n_t1)]
     x_lbl2 = [f"T{t+1}" for t in range(n_t2)]
     y_lbl  = [f"Q{nd}"  for nd in nds]
 
     legend1 = [
-        mpatches.Patch(facecolor="#F4F4F4", edgecolor="#ccc", label="Idle"),
-        mpatches.Patch(facecolor="#90CAF9",                   label="Z-neighbour"),
-        mpatches.Patch(facecolor="#1565C0",                   label="X-measured"),
+        mpatches.Patch(facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, label="Idle"),
+        mpatches.Patch(facecolor=_COL_HM_MPP_LIGHT, label="Z-neighbour"),
+        mpatches.Patch(facecolor=_COL_HM_MPP_DARK, label="X-measured"),
     ]
     legend2 = [
-        mpatches.Patch(facecolor="#F4F4F4", edgecolor="#ccc", label="Idle"),
-        mpatches.Patch(facecolor="#FFCC80",                   label="Step 1  (Z_u⊗Z_anc)"),
-        mpatches.Patch(facecolor="#E65100",                   label="Step 2  (Z_v⊗Z_anc)"),
+        mpatches.Patch(facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, label="Idle"),
+        mpatches.Patch(facecolor=_COL_HM_CZ_LIGHT, label="Step 1  (Z_u⊗Z_anc)"),
+        mpatches.Patch(facecolor=_COL_HM_CZ_DARK, label="Step 2  (Z_v⊗Z_anc)"),
     ]
 
     height = max(5, min(n_q * 0.22 + 3, 20))
@@ -560,7 +635,7 @@ def show_heatmaps(
         fig, (ax1, ax2) = plt.subplots(
             1, 2, figsize=(fig_w, height), facecolor=_FIG_BG,
         )
-    fig.suptitle("Schedule Heatmaps", fontsize=14, fontweight="bold")
+    fig.suptitle("Schedule Heatmaps", fontsize=_FS_SUPTITLE, fontweight="bold")
 
     plot_heatmap(mat1, x_lbl1, y_lbl,
                  f"Case 1 — MPP  ({n_t1} Tock{'s' if n_t1!=1 else ''})",
@@ -574,9 +649,9 @@ def show_heatmaps(
     if has_case3:
         x_lbl3  = [f"T{t+1}" for t in range(n_t3)]
         legend3 = [
-            mpatches.Patch(facecolor="#F4F4F4", edgecolor="#ccc", label="Idle"),
-            mpatches.Patch(facecolor="#FFCC80",                   label="Step 1  (Z_u⊗Z_anc)"),
-            mpatches.Patch(facecolor="#E65100",                   label="Step 2  (Z_v⊗Z_anc)"),
+            mpatches.Patch(facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, label="Idle"),
+            mpatches.Patch(facecolor=_COL_HM_CZ_LIGHT, label="Step 1  (Z_u⊗Z_anc)"),
+            mpatches.Patch(facecolor=_COL_HM_CZ_DARK, label="Step 2  (Z_v⊗Z_anc)"),
         ]
         plot_heatmap(mat3, x_lbl3, y_lbl,
                      f"Case 3 — CZ  (k={cz_k.k},  {n_t3} Tock{'s' if n_t3!=1 else ''},  {len(cz_k.batches)} batches)",
@@ -602,17 +677,17 @@ def plot_gantt_case1(scheduler: "SubstrateScheduler", ax: plt.Axes) -> None:
     ax.set_xlim(0, n_t)
     ax.set_ylim(-0.5, n_q - 0.5)
     ax.set_facecolor(_FIG_BG)
-    ax.set_xlabel("Tock  (logical time step)", fontsize=10)
-    ax.set_ylabel("Qubit / ELU  (substrate order)", fontsize=10)
-    ax.set_title("Case 1 — MPP Schedule", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
+    ax.set_ylabel("Qubit / ELU  (substrate order)", fontsize=_FS_AXIS)
+    ax.set_title("Case 1 — MPP Schedule", fontsize=_FS_TITLE, fontweight="bold")
     ax.spines[["top", "right"]].set_visible(False)
 
     x_lbl = [f"T{t+1}" for t in range(n_t)]
     y_lbl = [f"Q{scheduler.mapping[nd]}" for nd in nodes_sorted]
-    _smart_ticks(ax, n_t,  "x", x_lbl, fontsize=8)
-    _smart_ticks(ax, n_q,  "y", y_lbl, fontsize=7)
-    ax.grid(axis="x", linestyle=":", alpha=0.35, zorder=0)
-    ax.grid(axis="y", linestyle=":", alpha=0.18, zorder=0)
+    _smart_ticks(ax, n_t,  "x", x_lbl, fontsize=_FS_TICK)
+    _smart_ticks(ax, n_q,  "y", y_lbl, fontsize=_FS_TICK_SM)
+    ax.grid(axis="x", linestyle=":", alpha=_ALPHA_GRID_X, zorder=0)
+    ax.grid(axis="y", linestyle=":", alpha=_ALPHA_GRID_Y, zorder=0)
 
     for t, tock in enumerate(scheduler.schedule):
         col = _PALETTE[t % len(_PALETTE)]
@@ -620,25 +695,25 @@ def plot_gantt_case1(scheduler: "SubstrateScheduler", ax: plt.Axes) -> None:
             row = node_to_row[b["id"]]
             ax.broken_barh([(t + 0.07, 0.86)], (row - 0.38, 0.76),
                            facecolors=col, edgecolors="white",
-                           linewidth=0.6, alpha=0.92, zorder=2)
+                           linewidth=_LW_THIN, alpha=_ALPHA_HM_FILL, zorder=2)
             if n_q <= 40:
                 ax.text(t + 0.5, row, "X", ha="center", va="center",
-                        fontsize=6, fontweight="bold", color="white", zorder=3)
+                        fontsize=_FS_ANNOT_SM, fontweight="bold", color="white", zorder=3)
             for nb in b["neighbors"]:
                 r_nb = node_to_row[nb]
                 ax.broken_barh([(t + 0.07, 0.86)], (r_nb - 0.38, 0.76),
                                facecolors=col, edgecolors="white",
-                               linewidth=0.6, alpha=0.32, zorder=2)
+                               linewidth=_LW_THIN, alpha=_ALPHA_HM_LIGHT, zorder=2)
                 if n_q <= 40:
                     ax.text(t + 0.5, r_nb, "Z", ha="center", va="center",
-                            fontsize=6, color="white", zorder=3)
+                            fontsize=_FS_ANNOT_SM, color="white", zorder=3)
 
     ax.legend(
         handles=[
-            mpatches.Patch(facecolor="#444", alpha=0.92, label="X-measured"),
-            mpatches.Patch(facecolor="#444", alpha=0.32, label="Z-neighbour"),
+            mpatches.Patch(facecolor=_COL_TEXT_GRID, alpha=_ALPHA_HM_FILL, label="X-measured"),
+            mpatches.Patch(facecolor=_COL_TEXT_GRID, alpha=_ALPHA_HM_LIGHT, label="Z-neighbour"),
         ],
-        fontsize=8, frameon=False, loc="upper right",
+        fontsize=_FS_LEGEND, frameon=False, loc="upper right",
     )
 
 
@@ -653,36 +728,36 @@ def plot_gantt_case2(cz: "CZScheduler", ax: plt.Axes) -> None:
     ax.set_xlim(0, n_t)
     ax.set_ylim(-0.5, n_q - 0.5)
     ax.set_facecolor(_FIG_BG)
-    ax.set_xlabel("Tock  (logical time step)", fontsize=10)
-    ax.set_ylabel("Qubit / ELU", fontsize=10)
-    ax.set_title("Case 2 — CZ-Gate Schedule", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
+    ax.set_ylabel("Qubit / ELU", fontsize=_FS_AXIS)
+    ax.set_title("Case 2 — CZ-Gate Schedule", fontsize=_FS_TITLE, fontweight="bold")
     ax.spines[["top", "right"]].set_visible(False)
 
     x_lbl = [f"T{t+1}" for t in range(n_t)]
     y_lbl = [f"Q{nd}"  for nd in nodes_list]
-    _smart_ticks(ax, n_t, "x", x_lbl, fontsize=8)
-    _smart_ticks(ax, n_q, "y", y_lbl, fontsize=7)
-    ax.grid(axis="x", linestyle=":", alpha=0.35, zorder=0)
-    ax.grid(axis="y", linestyle=":", alpha=0.18, zorder=0)
+    _smart_ticks(ax, n_t, "x", x_lbl, fontsize=_FS_TICK)
+    _smart_ticks(ax, n_q, "y", y_lbl, fontsize=_FS_TICK_SM)
+    ax.grid(axis="x", linestyle=":", alpha=_ALPHA_GRID_X, zorder=0)
+    ax.grid(axis="y", linestyle=":", alpha=_ALPHA_GRID_Y, zorder=0)
 
     for r, edges in enumerate(cz.cz_rounds):
         col   = _PALETTE[r % len(_PALETTE)]
         t1, t2 = 2 * r, 2 * r + 1
         # Light band per round
-        ax.axvspan(t1, t2 + 1, alpha=0.07, color=col, zorder=0)
+        ax.axvspan(t1, t2 + 1, alpha=_ALPHA_SPAN, color=col, zorder=0)
         if n_t <= 80:
             ax.text(t1 + 1.0, n_q - 0.3,
                     f"R{r+1}", ha="center", va="center",
-                    fontsize=6, color=col, fontweight="bold", zorder=3)
+                    fontsize=_FS_ANNOT_SM, color=col, fontweight="bold", zorder=3)
         for u, v in edges:
             for tock, qubit in [(t1, u), (t2, v)]:
                 row = node_to_row[qubit]
                 ax.broken_barh([(tock + 0.07, 0.86)], (row - 0.38, 0.76),
                                facecolors=col, edgecolors="white",
-                               linewidth=0.6, alpha=0.85, zorder=2)
+                               linewidth=_LW_THIN, alpha=_ALPHA_BAR, zorder=2)
                 if n_q <= 40:
                     ax.text(tock + 0.5, row, "Z", ha="center", va="center",
-                            fontsize=6, fontweight="bold", color="white", zorder=3)
+                            fontsize=_FS_ANNOT_SM, fontweight="bold", color="white", zorder=3)
 
 
 def plot_gantt_case3(cz_k: "CZSchedulerFixedAncilla", ax: plt.Axes) -> None:
@@ -696,36 +771,36 @@ def plot_gantt_case3(cz_k: "CZSchedulerFixedAncilla", ax: plt.Axes) -> None:
     ax.set_xlim(0, n_t)
     ax.set_ylim(-0.5, n_q - 0.5)
     ax.set_facecolor(_FIG_BG)
-    ax.set_xlabel("Tock  (logical time step)", fontsize=10)
-    ax.set_ylabel("Qubit / ELU", fontsize=10)
+    ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
+    ax.set_ylabel("Qubit / ELU", fontsize=_FS_AXIS)
     ax.set_title(f"Case 3 — CZ  (k={cz_k.k} ancilla(s),  {len(cz_k.batches)} sub-batches)",
-                 fontsize=12, fontweight="bold")
+                 fontsize=_FS_TITLE, fontweight="bold")
     ax.spines[["top", "right"]].set_visible(False)
 
     x_lbl = [f"T{t+1}" for t in range(n_t)]
     y_lbl = [f"Q{nd}"  for nd in nodes_list]
-    _smart_ticks(ax, n_t, "x", x_lbl, fontsize=8)
-    _smart_ticks(ax, n_q, "y", y_lbl, fontsize=7)
-    ax.grid(axis="x", linestyle=":", alpha=0.35, zorder=0)
-    ax.grid(axis="y", linestyle=":", alpha=0.18, zorder=0)
+    _smart_ticks(ax, n_t, "x", x_lbl, fontsize=_FS_TICK)
+    _smart_ticks(ax, n_q, "y", y_lbl, fontsize=_FS_TICK_SM)
+    ax.grid(axis="x", linestyle=":", alpha=_ALPHA_GRID_X, zorder=0)
+    ax.grid(axis="y", linestyle=":", alpha=_ALPHA_GRID_Y, zorder=0)
 
     for b, batch in enumerate(cz_k.batches):
         col   = _PALETTE[b % len(_PALETTE)]
         t1, t2 = 2 * b, 2 * b + 1
-        ax.axvspan(t1, t2 + 1, alpha=0.07, color=col, zorder=0)
+        ax.axvspan(t1, t2 + 1, alpha=_ALPHA_SPAN, color=col, zorder=0)
         if n_t <= 80:
             ax.text(t1 + 1.0, n_q - 0.3,
                     f"B{b+1}", ha="center", va="center",
-                    fontsize=6, color=col, fontweight="bold", zorder=3)
+                    fontsize=_FS_ANNOT_SM, color=col, fontweight="bold", zorder=3)
         for u, v in batch:
             for tock, qubit in [(t1, u), (t2, v)]:
                 row = node_to_row[qubit]
                 ax.broken_barh([(tock + 0.07, 0.86)], (row - 0.38, 0.76),
                                facecolors=col, edgecolors="white",
-                               linewidth=0.6, alpha=0.85, zorder=2)
+                               linewidth=_LW_THIN, alpha=_ALPHA_BAR, zorder=2)
                 if n_q <= 40:
                     ax.text(tock + 0.5, row, "Z", ha="center", va="center",
-                            fontsize=6, fontweight="bold", color="white", zorder=3)
+                            fontsize=_FS_ANNOT_SM, fontweight="bold", color="white", zorder=3)
 
 
 def show_gantt(
@@ -744,7 +819,7 @@ def show_gantt(
     else:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, height),
                                        facecolor=_FIG_BG)
-    fig.suptitle("Schedule Gantt Charts", fontsize=14, fontweight="bold")
+    fig.suptitle("Schedule Gantt Charts", fontsize=_FS_SUPTITLE, fontweight="bold")
     plot_gantt_case1(scheduler, ax1)
     plot_gantt_case2(cz, ax2)
     if cz_k is not None:
@@ -776,18 +851,18 @@ def show_comparison_dashboard(
 
     # ── Build case labels and colours ────────────────────────────────────
     cases  = ["Case 1\n(MPP)", "Case 2\n(CZ)"]
-    colors = ["#4C72B0", "#DD8452"]
+    colors = [_PALETTE[0], _PALETTE[1]]
     if has3:
         cases.append(f"Case 3\n(CZ, k={report.ancilla_k})")
-        colors.append("#55A868")
+        colors.append(_PALETTE[2])
     if has4:
         k_str = report.switch_k or "?"
         cases.append(f"Case 4\n(MPP, k={k_str})")
-        colors.append("#C44E52")
+        colors.append(_PALETTE[3])
     if has5:
         k_str = report.switch_k or "?"
         cases.append(f"Case 5\n(CZ, k={k_str})")
-        colors.append("#8172B2")
+        colors.append(_PALETTE[4])
 
     n_cases = len(cases)
 
@@ -800,7 +875,7 @@ def show_comparison_dashboard(
         subtitle += f", switch k={report.switch_k}"
     fig.suptitle(
         f"Resource Comparison — {subtitle}",
-        fontsize=13, fontweight="bold",
+        fontsize=_FS_SUPTITLE, fontweight="bold",
     )
 
     def _panel(ax: plt.Axes, vals: list, case_labels: list,
@@ -817,14 +892,14 @@ def show_comparison_dashboard(
             ax.text(bar.get_x() + bar.get_width() / 2,
                     bar.get_height() * 1.03,
                     lbl, ha="center", va="bottom",
-                    fontsize=10, fontweight="bold")
+                    fontsize=_FS_BAR, fontweight="bold")
 
-        ax.set_title(title, fontsize=11, fontweight="bold", pad=8)
-        ax.set_ylabel(ylabel, fontsize=10)
+        ax.set_title(title, fontsize=_FS_TITLE, fontweight="bold", pad=8)
+        ax.set_ylabel(ylabel, fontsize=_FS_AXIS)
         ax.set_xticks(x)
-        ax.set_xticklabels(case_labels, fontsize=8)
+        ax.set_xticklabels(case_labels, fontsize=_FS_TICK)
         ax.spines[["top", "right"]].set_visible(False)
-        ax.grid(axis="y", linestyle="--", alpha=0.25, zorder=0)
+        ax.grid(axis="y", linestyle="--", alpha=_ALPHA_GRID, zorder=0)
         ax.set_ylim(0, max(vals) * 1.35)
 
     # ── Tock values ──────────────────────────────────────────────────────
@@ -891,23 +966,23 @@ def _draw_occupancy_tiles(
     ax.set_aspect("equal")
     ax.axis("off")
     ax.set_title(f"Tock {tock_idx + 1} — Qubit Occupancy",
-                 fontsize=11, fontweight="bold", pad=8)
+                 fontsize=_FS_TITLE, fontweight="bold", pad=8)
 
     # Row labels
     ax.text(-0.3, 2.0, "Ancilla", ha="right", va="center",
-            fontsize=10, color="#555", fontweight="bold")
+            fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
     ax.text(-0.3, 0.5, "Data",    ha="right", va="center",
-            fontsize=10, color="#555", fontweight="bold")
+            fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
 
     # Idle tiles
     for q in range(n_q):
         for row_y, prefix in [(1.5, "A"), (0.0, "Q")]:
             ax.add_patch(plt.Rectangle(
                 (q, row_y), 1, 1,
-                facecolor="#fafafa", edgecolor="#dddddd", linewidth=0.8,
+                facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, linewidth=_LW_NORMAL,
             ))
             ax.text(q + 0.5, row_y + 0.5, f"{prefix}{q}",
-                    ha="center", va="center", fontsize=8, color="#bbbbbb")
+                    ha="center", va="center", fontsize=_FS_ANNOT, color=_COL_IDLE_TEXT)
 
     # Active tiles — one colour per measurement in this tock
     for bi, b in enumerate(tock):
@@ -918,20 +993,20 @@ def _draw_occupancy_tiles(
         for q in range(L, R + 1):          # ancilla span
             ax.add_patch(plt.Rectangle(
                 (q, 1.5), 1, 1,
-                facecolor=col, edgecolor="white", linewidth=1.5, alpha=0.88,
+                facecolor=col, edgecolor="white", linewidth=_LW_THICK, alpha=_ALPHA_TILE,
             ))
             ax.text(q + 0.5, 2.0, f"A{q}",
                     ha="center", va="center",
-                    fontsize=8, fontweight="bold", color="white")
+                    fontsize=_FS_ANNOT, fontweight="bold", color="white")
 
         for q in involved:                 # data qubits
             ax.add_patch(plt.Rectangle(
                 (q, 0.0), 1, 1,
-                facecolor=col, edgecolor="white", linewidth=1.5, alpha=0.88,
+                facecolor=col, edgecolor="white", linewidth=_LW_THICK, alpha=_ALPHA_TILE,
             ))
             ax.text(q + 0.5, 0.5, f"Q{q}",
                     ha="center", va="center",
-                    fontsize=8, fontweight="bold", color="white")
+                    fontsize=_FS_ANNOT, fontweight="bold", color="white")
 
 
 def show_qubit_occupancy(
@@ -962,7 +1037,7 @@ def show_qubit_occupancy(
         gridspec_kw={"width_ratios": [1, max(1, n_q // 6)]},
     )
     fig.suptitle("Qubit Occupancy per Tock  (Case 1 — MPP)",
-                 fontsize=14, fontweight="bold", y=1.01)
+                 fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01)
 
     if n_tocks == 1:
         axes = [axes]   # normalise to list of rows
@@ -978,7 +1053,7 @@ def show_qubit_occupancy(
 
         node_colors = [
             _COL_MEASURE if nd in measured  else
-            "#FFD54F"    if nd in neighbors else
+            _COL_NODE_NBR if nd in neighbors else
             _COL_IDLE
             for nd in scheduler.G.nodes
         ]
@@ -993,12 +1068,12 @@ def show_qubit_occupancy(
 
         import networkx as nx
         nx.draw_networkx_edges(scheduler.G, pos, edgelist=inactive,
-                               width=1.2, edge_color=_COL_EDGE_OFF, ax=ax_graph)
+                               width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
         nx.draw_networkx_edges(scheduler.G, pos, edgelist=active_edges,
-                               width=2.0, edge_color=_COL_MEASURE, ax=ax_graph)
+                               width=_LW_HEAVY, edge_color=_COL_MEASURE, ax=ax_graph)
         nx.draw_networkx_nodes(scheduler.G, pos,
                                node_size=700, node_color=node_colors,
-                               edgecolors=_COL_BORDER, linewidths=1.2,
+                               edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
                                ax=ax_graph)
 
         labels = {
@@ -1007,7 +1082,7 @@ def show_qubit_occupancy(
             for nd in scheduler.G.nodes
         }
         nx.draw_networkx_labels(scheduler.G, pos, labels,
-                                font_size=9, font_color="#222", ax=ax_graph)
+                                font_size=_FS_NODE, font_color=_COL_TEXT_DARK, ax=ax_graph)
 
         # operator string below the graph
         op_strs = []
@@ -1017,20 +1092,20 @@ def show_qubit_occupancy(
             op_strs.append(" ⊗ ".join(parts))
         ax_graph.text(0.5, 0.02, "  |  ".join(op_strs),
                       transform=ax_graph.transAxes,
-                      ha="center", fontsize=8, family="monospace",
-                      color="#666", zorder=3)
+                      ha="center", fontsize=_FS_ANNOT, family="monospace",
+                      color=_COL_TEXT_LIGHT, zorder=3)
 
         ax_graph.legend(
             handles=[
                 mpatches.Patch(facecolor=_COL_MEASURE, edgecolor=_COL_BORDER,
-                               lw=1.2, label="X (measured)"),
-                mpatches.Patch(facecolor="#FFD54F",    edgecolor=_COL_BORDER,
-                               lw=1.2, label="Z (neighbour)"),
+                               lw=_LW_MEDIUM, label="X (measured)"),
+                mpatches.Patch(facecolor=_COL_NODE_NBR, edgecolor=_COL_BORDER,
+                               lw=_LW_MEDIUM, label="Z (neighbour)"),
             ],
-            fontsize=8, frameon=False, loc="upper right",
+            fontsize=_FS_LEGEND, frameon=False, loc="upper right",
         )
         ax_graph.set_title(f"Tock {t + 1} — Graph View",
-                           fontsize=11, fontweight="bold", pad=8)
+                           fontsize=_FS_TITLE, fontweight="bold", pad=8)
         ax_graph.axis("off")
         ax_graph.margins(0.18)
 
@@ -1084,7 +1159,7 @@ def show_qubit_occupancy_case3(
     )
     fig.suptitle(
         f"Qubit Occupancy per Tock  (Case 3 — CZ, k={k} ancilla(s))",
-        fontsize=14, fontweight="bold", y=1.01,
+        fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
     )
 
     if n_tocks == 1:
@@ -1109,8 +1184,8 @@ def show_qubit_occupancy_case3(
 
         # ── Graph view ───────────────────────────────────────────────────────
         node_colors = [
-            "#FFCC80" if nd in active_now   else
-            "#FFECB3" if nd in active_other else
+            _COL_NODE_ACTIVE if nd in active_now   else
+            _COL_NODE_OTHER  if nd in active_other else
             _COL_IDLE
             for nd in G.nodes
         ]
@@ -1121,12 +1196,12 @@ def show_qubit_occupancy_case3(
                           if (min(u,v), max(u,v)) not in batch_edge_set]
 
         nx_local.draw_networkx_edges(G, pos, edgelist=inactive_edges,
-                                     width=1.2, edge_color=_COL_EDGE_OFF, ax=ax_graph)
+                                     width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
         nx_local.draw_networkx_edges(G, pos, edgelist=active_edges,
-                                     width=2.5, edge_color=col, ax=ax_graph)
+                                     width=_LW_HEAVY, edge_color=col, ax=ax_graph)
         nx_local.draw_networkx_nodes(G, pos,
                                      node_size=700, node_color=node_colors,
-                                     edgecolors=_COL_BORDER, linewidths=1.2,
+                                     edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
                                      ax=ax_graph)
         step_lbl = "Z_u⊗Z_anc" if step == 0 else "Z_v⊗Z_anc"
         labels = {
@@ -1134,7 +1209,7 @@ def show_qubit_occupancy_case3(
             for nd in G.nodes
         }
         nx_local.draw_networkx_labels(G, pos, labels,
-                                      font_size=8, font_color="#222", ax=ax_graph)
+                                      font_size=_FS_ANNOT, font_color=_COL_TEXT_DARK, ax=ax_graph)
 
         op_parts = [
             f"Z_{u if step==0 else v}⊗Z_anc{i}"
@@ -1142,21 +1217,21 @@ def show_qubit_occupancy_case3(
         ]
         ax_graph.text(0.5, 0.02, "  |  ".join(op_parts),
                       transform=ax_graph.transAxes,
-                      ha="center", fontsize=8, family="monospace",
-                      color="#666", zorder=3)
+                      ha="center", fontsize=_FS_ANNOT, family="monospace",
+                      color=_COL_TEXT_LIGHT, zorder=3)
 
         ax_graph.legend(
             handles=[
-                mpatches.Patch(facecolor="#FFCC80", edgecolor=_COL_BORDER,
-                               lw=1.2, label="Active this tock"),
-                mpatches.Patch(facecolor="#FFECB3", edgecolor=_COL_BORDER,
-                               lw=1.2, label="Other CZ endpoint"),
+                mpatches.Patch(facecolor=_COL_NODE_ACTIVE, edgecolor=_COL_BORDER,
+                               lw=_LW_MEDIUM, label="Active this tock"),
+                mpatches.Patch(facecolor=_COL_NODE_OTHER, edgecolor=_COL_BORDER,
+                               lw=_LW_MEDIUM, label="Other CZ endpoint"),
             ],
-            fontsize=8, frameon=False, loc="upper right",
+            fontsize=_FS_LEGEND, frameon=False, loc="upper right",
         )
         step_name = "Step 1 (Z_u⊗Z_anc)" if step == 0 else "Step 2 (Z_v⊗Z_anc)"
         ax_graph.set_title(f"Tock {t+1} — Sub-batch {batch_idx+1}, {step_name}",
-                           fontsize=11, fontweight="bold", pad=8)
+                           fontsize=_FS_TITLE, fontweight="bold", pad=8)
         ax_graph.axis("off")
         ax_graph.margins(0.18)
 
@@ -1182,13 +1257,13 @@ def show_qubit_occupancy_case3(
         ax_tiles.set_title(
             f"Tock {t+1} — Tile Occupancy  "
             f"({n_active} / {k} ancilla ELU(s) docked)",
-            fontsize=10, fontweight="bold", pad=8,
+            fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
 
         ax_tiles.text(-0.3, 2.0, "Ancilla", ha="right", va="center",
-                      fontsize=10, color="#555", fontweight="bold")
+                      fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
         ax_tiles.text(-0.3, 0.5, "Data",    ha="right", va="center",
-                      fontsize=10, color="#555", fontweight="bold")
+                      fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
 
         for qi, nd in enumerate(nodes_list):
             if nd in active_map:
@@ -1198,41 +1273,41 @@ def show_qubit_occupancy_case3(
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 0.0), 1, 1,
                     facecolor=tile_col, edgecolor="white",
-                    linewidth=1.5, alpha=0.88, zorder=2,
+                    linewidth=_LW_THICK, alpha=_ALPHA_TILE, zorder=2,
                 ))
                 ax_tiles.text(qi + 0.5, 0.5, f"Q{nd}",
                               ha="center", va="center",
-                              fontsize=8, fontweight="bold", color="white", zorder=3)
+                              fontsize=_FS_ANNOT, fontweight="bold", color="white", zorder=3)
 
                 # Ancilla tile — docked directly above (same column, same color)
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 1.5), 1, 1,
                     facecolor=tile_col, edgecolor="white",
-                    linewidth=1.5, alpha=0.88, zorder=2,
+                    linewidth=_LW_THICK, alpha=_ALPHA_TILE, zorder=2,
                 ))
                 ax_tiles.text(qi + 0.5, 2.0, f"A{ai}",
                               ha="center", va="center",
-                              fontsize=8, fontweight="bold", color="white", zorder=3)
+                              fontsize=_FS_ANNOT, fontweight="bold", color="white", zorder=3)
 
                 # Connector: short vertical line linking the two tiles
                 ax_tiles.plot([qi + 0.5, qi + 0.5], [1.0, 1.5],
-                              color=tile_col, linewidth=2.5, alpha=0.75,
+                              color=tile_col, linewidth=_LW_HEAVY, alpha=_ALPHA_EMPTY,
                               solid_capstyle="round", zorder=1)
 
             else:
                 # Data qubit tile — idle (grey)
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 0.0), 1, 1,
-                    facecolor="#fafafa", edgecolor="#dddddd", linewidth=0.8,
+                    facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, linewidth=_LW_NORMAL,
                 ))
                 ax_tiles.text(qi + 0.5, 0.5, f"Q{nd}",
-                              ha="center", va="center", fontsize=7, color="#bbbbbb")
+                              ha="center", va="center", fontsize=_FS_TICK_SM, color=_COL_IDLE_TEXT)
 
                 # Ancilla slot above — faint dashed outline (no ancilla here)
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 1.5), 1, 1,
-                    facecolor="#f8f8f8", edgecolor="#e0e0e0",
-                    linewidth=0.6, linestyle="--",
+                    facecolor=_COL_EMPTY_FILL, edgecolor=_COL_EMPTY_EDGE,
+                    linewidth=_LW_THIN, linestyle="--",
                 ))
 
     plt.tight_layout()
@@ -1278,7 +1353,7 @@ def show_qubit_occupancy_case2(
     )
     fig.suptitle(
         "Qubit Occupancy per Tock  (Case 2 — CZ, unlimited ancillas)",
-        fontsize=14, fontweight="bold", y=1.01,
+        fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
     )
 
     if n_tocks == 1:
@@ -1302,8 +1377,8 @@ def show_qubit_occupancy_case2(
 
         # ── Graph view ───────────────────────────────────────────────────────
         node_colors = [
-            "#FFCC80" if nd in active_now   else
-            "#FFECB3" if nd in active_other else
+            _COL_NODE_ACTIVE if nd in active_now   else
+            _COL_NODE_OTHER  if nd in active_other else
             _COL_IDLE
             for nd in G.nodes
         ]
@@ -1314,12 +1389,12 @@ def show_qubit_occupancy_case2(
                           if (min(u, v), max(u, v)) not in round_edge_set]
 
         nx_local.draw_networkx_edges(G, pos, edgelist=inactive_edges,
-                                     width=1.2, edge_color=_COL_EDGE_OFF, ax=ax_graph)
+                                     width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
         nx_local.draw_networkx_edges(G, pos, edgelist=active_edges,
-                                     width=2.5, edge_color=round_col, ax=ax_graph)
+                                     width=_LW_HEAVY, edge_color=round_col, ax=ax_graph)
         nx_local.draw_networkx_nodes(G, pos,
                                      node_size=700, node_color=node_colors,
-                                     edgecolors=_COL_BORDER, linewidths=1.2,
+                                     edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
                                      ax=ax_graph)
         step_lbl = "Z_u⊗Z_anc" if step == 0 else "Z_v⊗Z_anc"
         labels = {
@@ -1327,7 +1402,7 @@ def show_qubit_occupancy_case2(
             for nd in G.nodes
         }
         nx_local.draw_networkx_labels(G, pos, labels,
-                                      font_size=8, font_color="#222", ax=ax_graph)
+                                      font_size=_FS_ANNOT, font_color=_COL_TEXT_DARK, ax=ax_graph)
 
         op_parts = [
             f"Z_{u if step == 0 else v}⊗Z_anc{i}"
@@ -1335,22 +1410,22 @@ def show_qubit_occupancy_case2(
         ]
         ax_graph.text(0.5, 0.02, "  |  ".join(op_parts),
                       transform=ax_graph.transAxes,
-                      ha="center", fontsize=8, family="monospace",
-                      color="#666", zorder=3)
+                      ha="center", fontsize=_FS_ANNOT, family="monospace",
+                      color=_COL_TEXT_LIGHT, zorder=3)
 
         ax_graph.legend(
             handles=[
-                mpatches.Patch(facecolor="#FFCC80", edgecolor=_COL_BORDER,
-                               lw=1.2, label="Active this tock"),
-                mpatches.Patch(facecolor="#FFECB3", edgecolor=_COL_BORDER,
-                               lw=1.2, label="Other CZ endpoint"),
+                mpatches.Patch(facecolor=_COL_NODE_ACTIVE, edgecolor=_COL_BORDER,
+                               lw=_LW_MEDIUM, label="Active this tock"),
+                mpatches.Patch(facecolor=_COL_NODE_OTHER, edgecolor=_COL_BORDER,
+                               lw=_LW_MEDIUM, label="Other CZ endpoint"),
             ],
-            fontsize=8, frameon=False, loc="upper right",
+            fontsize=_FS_LEGEND, frameon=False, loc="upper right",
         )
         step_name = "Step 1 (Z_u⊗Z_anc)" if step == 0 else "Step 2 (Z_v⊗Z_anc)"
         ax_graph.set_title(
             f"Tock {t + 1} — CZ Round {round_idx + 1}, {step_name}",
-            fontsize=11, fontweight="bold", pad=8,
+            fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
         ax_graph.axis("off")
         ax_graph.margins(0.18)
@@ -1371,13 +1446,13 @@ def show_qubit_occupancy_case2(
         ax_tiles.set_title(
             f"Tock {t + 1} — Tile Occupancy  "
             f"({n_active} ancilla ELU(s) docked)",
-            fontsize=10, fontweight="bold", pad=8,
+            fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
 
         ax_tiles.text(-0.3, 2.0, "Ancilla", ha="right", va="center",
-                      fontsize=10, color="#555", fontweight="bold")
+                      fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
         ax_tiles.text(-0.3, 0.5, "Data",    ha="right", va="center",
-                      fontsize=10, color="#555", fontweight="bold")
+                      fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
 
         for qi, nd in enumerate(nodes_list):
             if nd in active_map:
@@ -1386,36 +1461,36 @@ def show_qubit_occupancy_case2(
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 0.0), 1, 1,
                     facecolor=tile_col, edgecolor="white",
-                    linewidth=1.5, alpha=0.88, zorder=2,
+                    linewidth=_LW_THICK, alpha=_ALPHA_TILE, zorder=2,
                 ))
                 ax_tiles.text(qi + 0.5, 0.5, f"Q{nd}",
                               ha="center", va="center",
-                              fontsize=8, fontweight="bold", color="white", zorder=3)
+                              fontsize=_FS_ANNOT, fontweight="bold", color="white", zorder=3)
 
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 1.5), 1, 1,
                     facecolor=tile_col, edgecolor="white",
-                    linewidth=1.5, alpha=0.88, zorder=2,
+                    linewidth=_LW_THICK, alpha=_ALPHA_TILE, zorder=2,
                 ))
                 ax_tiles.text(qi + 0.5, 2.0, f"A{ai}",
                               ha="center", va="center",
-                              fontsize=8, fontweight="bold", color="white", zorder=3)
+                              fontsize=_FS_ANNOT, fontweight="bold", color="white", zorder=3)
 
                 ax_tiles.plot([qi + 0.5, qi + 0.5], [1.0, 1.5],
-                              color=tile_col, linewidth=2.5, alpha=0.75,
+                              color=tile_col, linewidth=_LW_HEAVY, alpha=_ALPHA_EMPTY,
                               solid_capstyle="round", zorder=1)
             else:
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 0.0), 1, 1,
-                    facecolor="#fafafa", edgecolor="#dddddd", linewidth=0.8,
+                    facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, linewidth=_LW_NORMAL,
                 ))
                 ax_tiles.text(qi + 0.5, 0.5, f"Q{nd}",
-                              ha="center", va="center", fontsize=7, color="#bbbbbb")
+                              ha="center", va="center", fontsize=_FS_TICK_SM, color=_COL_IDLE_TEXT)
 
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 1.5), 1, 1,
-                    facecolor="#f8f8f8", edgecolor="#e0e0e0",
-                    linewidth=0.6, linestyle="--",
+                    facecolor=_COL_EMPTY_FILL, edgecolor=_COL_EMPTY_EDGE,
+                    linewidth=_LW_THIN, linestyle="--",
                 ))
 
     plt.tight_layout()
@@ -1452,7 +1527,7 @@ def show_port_utilization(
     fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 5),
                              facecolor=_FIG_BG, squeeze=False)
     fig.suptitle("Switch Port Utilization per Tock Group / Sub-batch",
-                 fontsize=14, fontweight="bold")
+                 fontsize=_FS_SUPTITLE, fontweight="bold")
 
     for idx, (title, schedule, k, xlabel, mode) in enumerate(panels):
         ax = axes[0][idx]
@@ -1462,9 +1537,9 @@ def show_port_utilization(
         ports_used = [item.n_ports_used for item in schedule]
         util_pct = [p / k * 100 for p in ports_used]
 
-        bars = ax.bar(x, ports_used, color="#4C72B0" if mode == "cz" else "#55A868",
-                      edgecolor="white", zorder=2, alpha=0.85)
-        ax.axhline(k, color="#C44E52", linewidth=2, linestyle="--",
+        bars = ax.bar(x, ports_used, color=_PALETTE[0] if mode == "cz" else _PALETTE[2],
+                      edgecolor="white", zorder=2, alpha=_ALPHA_BAR)
+        ax.axhline(k, color=_PALETTE[3], linewidth=_LW_HEAVY, linestyle="--",
                    label=f"k = {k} (max ports)", zorder=3)
 
         # Label each bar with port count
@@ -1472,15 +1547,15 @@ def show_port_utilization(
             ax.text(bar.get_x() + bar.get_width() / 2,
                     bar.get_height() + 0.2,
                     f"{pu}", ha="center", va="bottom",
-                    fontsize=8, fontweight="bold")
+                    fontsize=_FS_BAR, fontweight="bold")
 
-        ax.set_xlabel(xlabel, fontsize=10)
-        ax.set_ylabel("Ports Used", fontsize=10)
-        ax.set_title(title, fontsize=12, fontweight="bold", pad=8)
-        _smart_ticks(ax, n, "x", [str(i + 1) for i in range(n)], fontsize=8)
+        ax.set_xlabel(xlabel, fontsize=_FS_AXIS)
+        ax.set_ylabel("Ports Used", fontsize=_FS_AXIS)
+        ax.set_title(title, fontsize=_FS_TITLE, fontweight="bold", pad=8)
+        _smart_ticks(ax, n, "x", [str(i + 1) for i in range(n)], fontsize=_FS_TICK)
         ax.spines[["top", "right"]].set_visible(False)
-        ax.grid(axis="y", linestyle="--", alpha=0.25, zorder=0)
-        ax.legend(fontsize=9, frameon=True, framealpha=0.9, loc="upper right")
+        ax.grid(axis="y", linestyle="--", alpha=_ALPHA_GRID, zorder=0)
+        ax.legend(fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND, loc="upper right")
         ax.set_ylim(0, k * 1.3)
 
         # Avg utilization annotation
@@ -1489,8 +1564,8 @@ def show_port_utilization(
                 f"Avg utilization: {avg_util:.0f}%  "
                 f"({n} {'groups' if mode == 'mpp' else 'batches'}, "
                 f"{sum(s.tocks for s in schedule)} Tocks)",
-                transform=ax.transAxes, fontsize=9, va="top",
-                color="#444", fontstyle="italic")
+                transform=ax.transAxes, fontsize=_FS_LEGEND, va="top",
+                color=_COL_TEXT_GRID, fontstyle="italic")
 
     plt.tight_layout()
     _save_or_show(fig, save_path, "port utilization chart", display)
@@ -1585,21 +1660,21 @@ def show_heatmaps_limited(
     elif cz_lim is not None:
         k_str = f"k={cz_lim.switch.k}"
     fig.suptitle(f"Schedule Heatmaps — k-Port Switch ({k_str})",
-                 fontsize=14, fontweight="bold")
+                 fontsize=_FS_SUPTITLE, fontweight="bold")
 
     # Case 4: white | light blue (Z-neighbour) | deep blue (X-measured)
-    cmap4 = ListedColormap(["#F4F4F4", "#90CAF9", "#1565C0"])
+    cmap4 = ListedColormap([_COL_IDLE, _COL_HM_MPP_LIGHT, _COL_HM_MPP_DARK])
     legend4 = [
-        mpatches.Patch(facecolor="#F4F4F4", edgecolor="#ccc", label="Idle"),
-        mpatches.Patch(facecolor="#90CAF9", label="Z-neighbour"),
-        mpatches.Patch(facecolor="#1565C0", label="X-measured"),
+        mpatches.Patch(facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, label="Idle"),
+        mpatches.Patch(facecolor=_COL_HM_MPP_LIGHT, label="Z-neighbour"),
+        mpatches.Patch(facecolor=_COL_HM_MPP_DARK, label="X-measured"),
     ]
     # Case 5: white | amber (CZ step 1) | deep orange (CZ step 2)
-    cmap5 = ListedColormap(["#F4F4F4", "#FFCC80", "#E65100"])
+    cmap5 = ListedColormap([_COL_IDLE, _COL_HM_CZ_LIGHT, _COL_HM_CZ_DARK])
     legend5 = [
-        mpatches.Patch(facecolor="#F4F4F4", edgecolor="#ccc", label="Idle"),
-        mpatches.Patch(facecolor="#FFCC80", label="CZ Step 1 (Z_u)"),
-        mpatches.Patch(facecolor="#E65100", label="CZ Step 2 (Z_v)"),
+        mpatches.Patch(facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, label="Idle"),
+        mpatches.Patch(facecolor=_COL_HM_CZ_LIGHT, label="CZ Step 1 (Z_u)"),
+        mpatches.Patch(facecolor=_COL_HM_CZ_DARK, label="CZ Step 2 (Z_v)"),
     ]
 
     for idx, (mat, xlbl, title, mode) in enumerate(panels):
@@ -1649,11 +1724,7 @@ def _draw_switch_diagram(
     Each switch has k generic ports. Data and ancilla ELUs connect to any
     port — they are NOT pre-split into data/ancilla rows.
     """
-    _SW_COLORS = ["#4CAF50", "#2196F3", "#FF9800", "#9C27B0",
-                  "#00BCD4", "#E91E63", "#795548", "#607D8B"]
-    if not is_case4:
-        _SW_COLORS = ["#E65100", "#1565C0", "#2E7D32", "#6A1B9A",
-                      "#00838F", "#C62828", "#4E342E", "#37474F"]
+    _SW_COLORS = _SW_COLORS_LIGHT if is_case4 else _SW_COLORS_DARK
 
     port_w = 0.5
     port_sp = 0.7     # port spacing
@@ -1672,7 +1743,7 @@ def _draw_switch_diagram(
     ax.set_ylim(anc_y - 1.2, data_y + 1.2)
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.set_title(title, fontsize=10, fontweight="bold", pad=8)
+    ax.set_title(title, fontsize=_FS_TITLE, fontweight="bold", pad=8)
 
     # ── DATA ELUs (top row) — all n_q shown ─────────────────────────────
     data_x_start = (max_x - n_q) / 2
@@ -1681,13 +1752,13 @@ def _draw_switch_diagram(
         x = data_x_start + qi
         if is_case4:
             if nd in data_measured:
-                fc, ec = _COL_MEASURE, "#E53935"
+                fc, ec = _COL_MEASURE, _COL_NODE_MEAS
             elif nd in data_neighbor:
-                fc, ec = "#FFD54F", "#F9A825"
+                fc, ec = _COL_NODE_NBR, _COL_NODE_NBR_EC
             else:
-                fc, ec = "#F5F5F5", "#E0E0E0"
+                fc, ec = _COL_IDLE, _COL_EMPTY_EDGE
             tc = "white" if nd in data_measured else (
-                 "#333" if nd in data_neighbor else "#CCC")
+                 _COL_TEXT_DARK if nd in data_neighbor else _COL_TEXT_ON_DARK)
             role = "X" if nd in data_measured else (
                    "Z" if nd in data_neighbor else "")
             lbl = f"Q{nd}" + (f"\n{role}" if role else "")
@@ -1695,24 +1766,24 @@ def _draw_switch_diagram(
             is_active = nd in data_active
             is_other = nd in data_other
             if is_active:
-                fc, ec = "#FFCC80", "#F57C00"
+                fc, ec = _COL_NODE_ACTIVE, _COL_NODE_ACT_EC
             elif is_other:
-                fc, ec = "#FFECB3", "#FFB74D"
+                fc, ec = _COL_NODE_OTHER, _COL_NODE_OTH_EC
             else:
-                fc, ec = "#F5F5F5", "#E0E0E0"
-            tc = "#333" if is_active else ("#888" if is_other else "#CCC")
+                fc, ec = _COL_IDLE, _COL_EMPTY_EDGE
+            tc = _COL_TEXT_DARK if is_active else (_COL_TEXT_MED if is_other else _COL_TEXT_ON_DARK)
             lbl = f"Q{nd}"
         ax.add_patch(plt.Rectangle(
             (x, data_y - 0.35), 0.8, 0.7,
             facecolor=fc, edgecolor=ec, linewidth=1.5, zorder=2,
         ))
         ax.text(x + 0.4, data_y, lbl, ha="center", va="center",
-                fontsize=7, fontweight="bold", color=tc, zorder=3)
+                fontsize=_FS_TICK_SM, fontweight="bold", color=tc, zorder=3)
         if nd in data_active:
             data_positions[nd] = x + 0.4
 
     ax.text(data_x_start + n_q / 2, data_y + 0.6, "Data ELUs",
-            ha="center", fontsize=8, color="#666", fontweight="bold")
+            ha="center", fontsize=_FS_ANNOT, color=_COL_TEXT_LIGHT, fontweight="bold")
 
     # ── ANCILLA ELUs (bottom row) — show only active ones ────────────────
     total_anc = sum(sw_anc_count)
@@ -1728,21 +1799,21 @@ def _draw_switch_diagram(
     for ai_idx in range(total_anc):
         x = anc_x_start + ai_idx
         sw_c = _SW_COLORS[anc_sw_map[ai_idx] % len(_SW_COLORS)]
-        fc = "#A5D6A7" if is_case4 else "#FFB74D"
+        fc = _COL_MIS if is_case4 else _COL_NODE_ACTIVE
         ec = sw_c
         ax.add_patch(plt.Rectangle(
             (x, anc_y - 0.35), 0.8, 0.7,
-            facecolor=fc, edgecolor=ec, linewidth=1.5, zorder=2,
+            facecolor=fc, edgecolor=ec, linewidth=_LW_THICK, zorder=2,
         ))
-        tc = "#1B5E20" if is_case4 else "#333"
+        tc = _COL_TEXT_DARK if is_case4 else _COL_TEXT_DARK
         ax.text(x + 0.4, anc_y, f"A{ai_idx}", ha="center", va="center",
-                fontsize=7, fontweight="bold", color=tc, zorder=3)
+                fontsize=_FS_TICK_SM, fontweight="bold", color=tc, zorder=3)
         anc_positions[ai_idx] = x + 0.4
 
     if total_anc > 0:
         ax.text(anc_x_start + total_anc / 2, anc_y - 0.7, "Ancilla ELUs",
-                ha="center", fontsize=8,
-                color="#2E7D32" if is_case4 else "#E65100", fontweight="bold")
+                ha="center", fontsize=_FS_ANNOT,
+                color=_SW_COLORS_DARK[2] if is_case4 else _SW_COLORS_DARK[0], fontweight="bold")
 
     # ── SWITCH boxes (middle, side-by-side, single row of k ports) ──────
     sw_row_x_start = (max_x - total_sw_w) / 2
@@ -1760,7 +1831,7 @@ def _draw_switch_diagram(
             (box_x, sw_box_y0), sw_box_w, sw_box_h,
             boxstyle="round,pad=0.1",
             facecolor=sw_color_bg, edgecolor=sw_color,
-            linewidth=2, zorder=1,
+            linewidth=_LW_HEAVY, zorder=1,
         ))
 
         n_data_sw = len(sw_data_nodes[si])
@@ -1770,7 +1841,7 @@ def _draw_switch_diagram(
                       if n_sw > 1
                       else f"k-PORT SWITCH  (k={k}, {ports_used}/{k} ports)")
         ax.text(box_x + sw_box_w / 2, sw_box_y0 - 0.3, label_text,
-                ha="center", fontsize=7, fontweight="bold", color=sw_color)
+                ha="center", fontsize=_FS_TICK_SM, fontweight="bold", color=sw_color)
 
         # Draw k ports in a single row: first n_data_sw are data, next n_anc_sw are ancilla
         for pi in range(k):
@@ -1782,21 +1853,21 @@ def _draw_switch_diagram(
                 plbl = "D"
             elif pi < n_data_sw + n_anc_sw:
                 # Ancilla port
-                fc = "#A5D6A7" + "88" if is_case4 else "#FFB74D88"
+                fc = f"{_COL_MIS}88" if is_case4 else f"{_COL_NODE_ACTIVE}88"
                 ec = sw_color
                 plbl = "A"
             else:
                 # Empty port
-                fc = "#F5F5F5"
-                ec = "#DDD"
+                fc = _COL_IDLE
+                ec = _COL_IDLE_EDGE
                 plbl = ""
             ax.add_patch(plt.Rectangle(
                 (px, sw_y - 0.2), port_w, 0.4,
-                facecolor=fc, edgecolor=ec, linewidth=1.0, zorder=2,
+                facecolor=fc, edgecolor=ec, linewidth=_LW_NORMAL, zorder=2,
             ))
             if plbl:
                 ax.text(px + port_w / 2, sw_y, plbl, ha="center", va="center",
-                        fontsize=6, color=sw_color, fontweight="bold", zorder=3)
+                        fontsize=_FS_ANNOT_SM, color=sw_color, fontweight="bold", zorder=3)
 
         # Lines: data ELU → data port
         data_sorted = sorted(sw_data_nodes[si])
@@ -1805,10 +1876,10 @@ def _draw_switch_diagram(
                 continue
             ex = data_positions[nd]
             px = box_x + 0.2 + pi * port_sp + port_w / 2
-            lc = "#E53935" if nd in data_measured else (
-                 "#F9A825" if nd in data_neighbor else "#F57C00")
+            lc = _COL_NODE_MEAS if nd in data_measured else (
+                 _COL_NODE_NBR_EC if nd in data_neighbor else _COL_NODE_ACT_EC)
             ax.plot([ex, px], [data_y - 0.35, sw_y + 0.2],
-                    color=lc, linewidth=1.5, alpha=0.6, zorder=0)
+                    color=lc, linewidth=_LW_THICK, alpha=0.6, zorder=0)
 
         # Lines: ancilla port → ancilla ELU
         anc_gi_start = sum(sw_anc_count[:si])
@@ -1819,7 +1890,7 @@ def _draw_switch_diagram(
             ax_pos = anc_positions[anc_gi]
             px = box_x + 0.2 + (n_data_sw + ai_off) * port_sp + port_w / 2
             ax.plot([px, ax_pos], [sw_y - 0.2, anc_y + 0.35],
-                    color=sw_color, linewidth=1.5, alpha=0.5,
+                    color=sw_color, linewidth=_LW_THICK, alpha=0.5,
                     linestyle="--", zorder=0)
 
 
@@ -1858,7 +1929,7 @@ def show_qubit_occupancy_case4(
     sw_label = f"{n_sw}x k={k}" if n_sw > 1 else f"k={k}"
     fig.suptitle(
         f"Per-Tock Occupancy — Case 4 (MPP, {sw_label} port switch)",
-        fontsize=14, fontweight="bold", y=1.01,
+        fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
     )
     if n_tocks == 1:
         axes = [axes]
@@ -1878,7 +1949,7 @@ def show_qubit_occupancy_case4(
         # ── Graph view (left panel) ─────────────────────────────────────
         node_colors = [
             _COL_MEASURE if nd in measured else
-            "#FFD54F"    if nd in neighbors else
+            _COL_NODE_NBR if nd in neighbors else
             _COL_IDLE
             for nd in G.nodes
         ]
@@ -1894,12 +1965,12 @@ def show_qubit_occupancy_case4(
                           if e not in active_edges
                           and (e[1], e[0]) not in active_edges]
         nx_local.draw_networkx_edges(G, pos, edgelist=inactive_edges,
-                                     width=1.2, edge_color=_COL_EDGE_OFF, ax=ax_graph)
+                                     width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
         nx_local.draw_networkx_edges(G, pos, edgelist=active_edges,
-                                     width=2.5, edge_color=_COL_MEASURE, ax=ax_graph)
+                                     width=_LW_HEAVY, edge_color=_COL_MEASURE, ax=ax_graph)
         nx_local.draw_networkx_nodes(G, pos, node_size=700,
                                      node_color=node_colors,
-                                     edgecolors=_COL_BORDER, linewidths=1.2,
+                                     edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
                                      ax=ax_graph)
         labels = {
             nd: (f"{nd}\nX" if nd in measured else
@@ -1907,28 +1978,28 @@ def show_qubit_occupancy_case4(
             for nd in G.nodes
         }
         nx_local.draw_networkx_labels(G, pos, labels,
-                                      font_size=9, font_color="#222", ax=ax_graph)
+                                      font_size=_FS_NODE, font_color=_COL_TEXT_DARK, ax=ax_graph)
         op_strs = []
         for m in sg.measurements:
             parts = [f"X{m['id']}"] + [f"Z{nb}" for nb in m["neighbors"]]
             op_strs.append(" ".join(parts))
         ax_graph.text(0.5, 0.02, "  |  ".join(op_strs),
                       transform=ax_graph.transAxes,
-                      ha="center", fontsize=8, family="monospace",
-                      color="#666", zorder=3)
+                      ha="center", fontsize=_FS_ANNOT, family="monospace",
+                      color=_COL_TEXT_LIGHT, zorder=3)
         ax_graph.legend(
             handles=[
                 mpatches.Patch(facecolor=_COL_MEASURE, edgecolor=_COL_BORDER,
-                               lw=1.2, label="X (measured)"),
-                mpatches.Patch(facecolor="#FFD54F", edgecolor=_COL_BORDER,
-                               lw=1.2, label="Z (neighbour)"),
+                               lw=_LW_MEDIUM, label="X (measured)"),
+                mpatches.Patch(facecolor=_COL_NODE_NBR, edgecolor=_COL_BORDER,
+                               lw=_LW_MEDIUM, label="Z (neighbour)"),
             ],
-            fontsize=8, frameon=False, loc="upper right",
+            fontsize=_FS_LEGEND, frameon=False, loc="upper right",
         )
         gen_ids = [m["id"] for m in sg.measurements]
         ax_graph.set_title(
             f"Group {gi+1} — generators {gen_ids}",
-            fontsize=11, fontweight="bold", pad=8,
+            fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
         ax_graph.axis("off")
         ax_graph.margins(0.18)
@@ -2004,7 +2075,7 @@ def show_qubit_occupancy_case5(
     sw_label = f"{n_sw}x k={k}" if n_sw > 1 else f"k={k}"
     fig.suptitle(
         f"Per-Tock Occupancy — Case 5 (CZ, {sw_label} port switch)",
-        fontsize=14, fontweight="bold", y=1.01,
+        fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
     )
     if n_tocks == 1:
         axes = [axes]
@@ -2025,8 +2096,8 @@ def show_qubit_occupancy_case5(
 
         # ── Graph view (left panel) ─────────────────────────────────────
         node_colors = [
-            "#FFCC80" if nd in active_now else
-            "#FFECB3" if nd in active_other else
+            _COL_NODE_ACTIVE if nd in active_now else
+            _COL_NODE_OTHER  if nd in active_other else
             _COL_IDLE
             for nd in G.nodes
         ]
@@ -2036,12 +2107,12 @@ def show_qubit_occupancy_case5(
         inactive_edges = [(u, v) for u, v in G.edges()
                           if (min(u, v), max(u, v)) not in batch_edge_set]
         nx_local.draw_networkx_edges(G, pos, edgelist=inactive_edges,
-                                     width=1.2, edge_color=_COL_EDGE_OFF, ax=ax_graph)
+                                     width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
         nx_local.draw_networkx_edges(G, pos, edgelist=active_edges,
-                                     width=2.5, edge_color=col, ax=ax_graph)
+                                     width=_LW_HEAVY, edge_color=col, ax=ax_graph)
         nx_local.draw_networkx_nodes(G, pos, node_size=700,
                                      node_color=node_colors,
-                                     edgecolors=_COL_BORDER, linewidths=1.2,
+                                     edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
                                      ax=ax_graph)
         step_lbl = "Z_u" if step == 0 else "Z_v"
         labels = {
@@ -2049,25 +2120,25 @@ def show_qubit_occupancy_case5(
             for nd in G.nodes
         }
         nx_local.draw_networkx_labels(G, pos, labels,
-                                      font_size=8, font_color="#222", ax=ax_graph)
+                                      font_size=_FS_ANNOT, font_color=_COL_TEXT_DARK, ax=ax_graph)
         edge_strs = [f"CZ({u},{v})" for u, v in sb.edges]
         ax_graph.text(0.5, 0.02, "  ".join(edge_strs),
                       transform=ax_graph.transAxes,
-                      ha="center", fontsize=8, family="monospace",
-                      color="#666", zorder=3)
+                      ha="center", fontsize=_FS_ANNOT, family="monospace",
+                      color=_COL_TEXT_LIGHT, zorder=3)
         ax_graph.legend(
             handles=[
-                mpatches.Patch(facecolor="#FFCC80", edgecolor=_COL_BORDER,
-                               lw=1.2, label="Active this tock"),
-                mpatches.Patch(facecolor="#FFECB3", edgecolor=_COL_BORDER,
-                               lw=1.2, label="Other CZ endpoint"),
+                mpatches.Patch(facecolor=_COL_NODE_ACTIVE, edgecolor=_COL_BORDER,
+                               lw=_LW_MEDIUM, label="Active this tock"),
+                mpatches.Patch(facecolor=_COL_NODE_OTHER, edgecolor=_COL_BORDER,
+                               lw=_LW_MEDIUM, label="Other CZ endpoint"),
             ],
-            fontsize=8, frameon=False, loc="upper right",
+            fontsize=_FS_LEGEND, frameon=False, loc="upper right",
         )
         step_name = "Step 1 (Z_u x Z_anc)" if step == 0 else "Step 2 (Z_v x Z_anc)"
         ax_graph.set_title(
             f"Tock {t+1} — Sub-batch {batch_idx+1}, {step_name}",
-            fontsize=11, fontweight="bold", pad=8,
+            fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
         ax_graph.axis("off")
         ax_graph.margins(0.18)
