@@ -22,6 +22,7 @@ Graph types: path, cycle, star, complete, grid, random, petersen, hypercube
 """
 
 import argparse
+import json
 import os
 import sys
 
@@ -58,11 +59,39 @@ GRAPH_BUILDERS = {
 GRAPH_HELP = ", ".join(GRAPH_BUILDERS)
 
 
-def build_graph(graph_type: str, n: int, p: float) -> nx.Graph:
-    if graph_type not in GRAPH_BUILDERS:
-        print(f"Unknown graph '{graph_type}'. Options: {GRAPH_HELP}")
+def load_graph_file(path: str) -> nx.Graph:
+    """Read an arbitrary target graph from a file.
+
+    Accepts an edge list (one "u v" pair per line, '#' comments allowed) or
+    a NetworkX node-link JSON file, so any graph can be scheduled without
+    being one of the built-in families.
+    """
+    if not os.path.exists(path):
+        print(f"Graph file not found: {path}")
         sys.exit(1)
-    G = GRAPH_BUILDERS[graph_type](n, p)
+
+    if path.lower().endswith(".json"):
+        with open(path) as f:
+            G = nx.node_link_graph(json.load(f))
+    else:
+        G = nx.read_edgelist(path, nodetype=int, comments="#")
+
+    G = nx.convert_node_labels_to_integers(nx.Graph(G))
+    if len(G) == 0:
+        print(f"Graph file '{path}' contains no edges.")
+        sys.exit(1)
+    return G
+
+
+def build_graph(graph_type: str, n: int, p: float,
+                graph_file: str | None = None) -> nx.Graph:
+    if graph_file:
+        G = load_graph_file(graph_file)
+    else:
+        if graph_type not in GRAPH_BUILDERS:
+            print(f"Unknown graph '{graph_type}'. Options: {GRAPH_HELP}")
+            sys.exit(1)
+        G = GRAPH_BUILDERS[graph_type](n, p)
     # Remove self-loops (safety)
     G.remove_edges_from(nx.selfloop_edges(G))
     return G
@@ -97,6 +126,10 @@ def make_parser() -> argparse.ArgumentParser:
                    help="Node count (grid side / hypercube dimension where applicable)")
     g.add_argument("--p", type=float, default=0.3,
                    help="Edge probability (random graph only)")
+    g.add_argument("--graph-file", metavar="FILE", default=None,
+                   help="Schedule an arbitrary graph read from FILE "
+                        "(edge list, one 'u v' per line, or node-link JSON). "
+                        "Overrides --graph.")
 
     # ── Simulation ────────────────────────────────────────────────────────────
     s = p.add_argument_group("Simulation")
@@ -227,8 +260,10 @@ def main() -> None:
         args.export         = args.export         or os.path.join(folder, "report.json")
         print(f"  Output folder: {folder}/")
 
-    G = build_graph(args.graph, args.n, args.p)
-    print(f"\n  Graph: {args.graph}(n={args.n})  "
+    G = build_graph(args.graph, args.n, args.p, args.graph_file)
+    label = (f"file:{os.path.basename(args.graph_file)}" if args.graph_file
+             else f"{args.graph}(n={args.n})")
+    print(f"\n  Graph: {label}  "
           f"|V|={len(G.nodes)}, |E|={len(G.edges)}, "
           f"Δ={max(d for _, d in G.degree()) if G.nodes else 0}")
 

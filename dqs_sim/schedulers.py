@@ -134,7 +134,9 @@ class SubstrateScheduler:
         if n <= 20:
             return self._exact_mis()
         print(f"Warning: |V| = {n} > 20. Using greedy MIS (not necessarily maximum).")
-        return nx.maximal_independent_set(self.G)
+        # Seeded: an unseeded greedy MIS gives a different cover, and therefore
+        # a different Tock count, on every run.
+        return nx.maximal_independent_set(self.G, seed=_LAYOUT_SEED)
 
     def phase_1_reduction(self) -> list:
         """Compute MIS and split nodes into free (MIS) and to-measure sets."""
@@ -151,7 +153,24 @@ class SubstrateScheduler:
         Map qubits to contiguous physical positions via spectral ordering
         (Fiedler vector of the graph Laplacian).
         """
-        ordering    = list(nx.spectral_ordering(self.G))
+        # Dense eigendecomposition rather than nx.spectral_ordering: the
+        # iterative solvers behind it either stall (tracemin_pcg) or depend on
+        # process-global RNG state (ARPACK's internal start vector) on graphs
+        # with degenerate Fiedler eigenvalues, e.g. distance-regular incidence
+        # graphs, making the layout, and hence the Tock count, irreproducible.
+        # numpy.linalg.eigh is deterministic and exact at these graph sizes.
+        import numpy as np
+        L = nx.laplacian_matrix(self.G).toarray().astype(float)
+        _, vecs = np.linalg.eigh(L)
+        fiedler = vecs[:, 1]
+        for x in fiedler:                      # fix the eigenvector's sign
+            if abs(x) > 1e-12:
+                if x < 0:
+                    fiedler = -fiedler
+                break
+        nodes = list(self.G.nodes)
+        order_idx = np.argsort(fiedler, kind="stable")
+        ordering = [nodes[i] for i in order_idx]
         self.mapping = {node: i for i, node in enumerate(ordering)}
         return self.mapping
 

@@ -26,11 +26,34 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
+import matplotlib as mpl
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import FancyBboxPatch
+
+
+def _init_thesis_style() -> None:
+    """Serif text + Computer-Modern math so figures match the lmodern thesis."""
+    mpl.rcParams.update({
+        "figure.facecolor":  "white",
+        "savefig.facecolor": "white",
+        "font.family":       "serif",
+        "font.serif":        ["DejaVu Serif", "CMU Serif", "Times New Roman"],
+        "mathtext.fontset":  "cm",
+        "axes.edgecolor":    "#5A6473",
+        "axes.labelcolor":   "#1A1A1A",
+        "axes.titlecolor":   "#1A1A1A",
+        "text.color":        "#1A1A1A",
+        "xtick.color":       "#5A6473",
+        "ytick.color":       "#5A6473",
+        "axes.linewidth":    0.8,
+        "savefig.dpi":       300,
+    })
+
+
+_init_thesis_style()
 
 if TYPE_CHECKING:
     from dqs_sim.cost import ResourceReport
@@ -45,11 +68,11 @@ if TYPE_CHECKING:
 # Unified Style System
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Colour palette (perceptually distinct, print-safe) ──────────────────────
+# ── Colour palette (muted navy / warm / green — matches the thesis) ─────────
 _PALETTE = [
-    "#4C72B0", "#DD8452", "#55A868", "#C44E52",
-    "#8172B2", "#937860", "#DA8BC3", "#8C8C8C",
-    "#CCB974", "#64B5CD", "#E377C2", "#7F7F7F",
+    "#285A96", "#C1853C", "#4E8C6A", "#9C5A8C",
+    "#5A6473", "#7FA6CE", "#B0743C", "#8C8C8C",
+    "#6FA890", "#3E6FA8", "#9C5A8C", "#7F7F7F",
 ]
 
 # ── Semantic colours ────────────────────────────────────────────────────────
@@ -57,37 +80,37 @@ _COL_IDLE       = "#F4F4F4"   # idle patch / tile fill
 _COL_IDLE_EDGE  = "#DDDDDD"   # idle patch / tile border
 _COL_IDLE_TEXT  = "#BBBBBB"   # idle tile label text
 _COL_MIS        = "#A8D8A8"   # MIS (|+⟩ init) fill
-_COL_MEASURE    = "#F4A7A7"   # to-measure fill
+_COL_MEASURE    = "#B8CDE4"   # to-measure fill (light navy)
 _COL_BORDER     = "#555555"   # default patch border
 _COL_EDGE_OFF   = "#DDDDDD"   # idle edge colour
 _COL_EMPTY_FILL = "#F8F8F8"   # empty tile fill (Case 2/3 substrate)
 _COL_EMPTY_EDGE = "#E0E0E0"   # empty tile border
 _FIG_BG         = "white"
 
-# ── Heatmap semantic colours ────────────────────────────────────────────────
-_COL_HM_MPP_LIGHT  = "#90CAF9"   # Case 1 heatmap: Z-neighbour (light)
-_COL_HM_MPP_DARK   = "#1565C0"   # Case 1 heatmap: X-measured (dark)
-_COL_HM_CZ_LIGHT   = "#FFCC80"   # Case 2/3/5 heatmap: CZ step 1
-_COL_HM_CZ_DARK    = "#E65100"   # Case 2/3/5 heatmap: CZ step 2
+# ── Heatmap semantic colours (thesis navy / ochre) ──────────────────────────
+_COL_HM_MPP_LIGHT  = "#B8CDE4"   # Case 1 heatmap: Z-neighbour (light navy)
+_COL_HM_MPP_DARK   = "#285A96"   # Case 1 heatmap: X-measured (navy)
+_COL_HM_CZ_LIGHT   = "#E6C79A"   # Case 2/3/5 heatmap: CZ step 1 (light ochre)
+_COL_HM_CZ_DARK    = "#B0743C"   # Case 2/3/5 heatmap: CZ step 2 (ochre)
 
 # ── Node colours for graph views ────────────────────────────────────────────
-_COL_NODE_MIS    = "#4CAF50"   # green: MIS / measured node
-_COL_NODE_MEAS   = "#E53935"   # red: to-measure / measured edge
+_COL_NODE_MIS    = "#4E8C6A"   # green: MIS / measured node
+_COL_NODE_MEAS   = "#285A96"   # navy: to-measure / measured edge
 _COL_NODE_ACTIVE = "#FFCC80"   # amber: active CZ node
 _COL_NODE_OTHER  = "#FFECB3"   # pale amber: other active node
-_COL_NODE_NBR    = "#FFD54F"   # yellow: neighbour highlight
-_COL_NODE_NBR_EC = "#F9A825"   # dark yellow: neighbour edge
+_COL_NODE_NBR    = "#EFDBB8"   # pale ochre: neighbour highlight
+_COL_NODE_NBR_EC = "#C1853C"   # ochre: neighbour edge
 _COL_NODE_ACT_EC = "#F57C00"   # dark amber: active CZ node edge
 _COL_NODE_OTH_EC = "#FFB74D"   # light amber: other CZ node edge
 
 # ── Switch diagram colours ──────────────────────────────────────────────────
 _SW_COLORS_LIGHT = [
-    "#4CAF50", "#2196F3", "#FF9800", "#9C27B0",
-    "#00BCD4", "#E91E63", "#795548", "#607D8B",
+    "#5A6473", "#4E8C6A", "#C1853C", "#9C5A8C",
+    "#3E6FA8", "#B0743C", "#6FA890", "#8C8C8C",
 ]
 _SW_COLORS_DARK = [
-    "#E65100", "#1565C0", "#2E7D32", "#6A1B9A",
-    "#00838F", "#C62828", "#4E342E", "#37474F",
+    "#5A6473", "#4E8C6A", "#C1853C", "#9C5A8C",
+    "#3E6FA8", "#B0743C", "#6FA890", "#8C8C8C",
 ]
 
 # ── Text colours ────────────────────────────────────────────────────────────
@@ -279,7 +302,7 @@ def show_2d_layout(
     display:   bool = False,
 ) -> None:
     """
-    Two-panel figure showing ELUs as physical surface-code patches.
+    Two-panel figure showing QPUs as physical surface-code patches.
 
     Left  — Case 1: MIS nodes (green) vs to-measure (pink).
              Edges coloured by the Tock in which they are activated.
@@ -362,8 +385,7 @@ def show_2d_layout(
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(fig_w, 8), facecolor=_FIG_BG)
     else:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(fig_w, 8), facecolor=_FIG_BG)
-    fig.suptitle("2D ELU Patch Layout", fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01)
-
+    # fig.suptitle("2D QPU Patch Layout", fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01)
     _draw_patch_layout(
         pos, c1_node_fill, c1_node_lw, c1_node_ec,
         c1_edge_col, c1_edge_lw, all_edges,
@@ -563,7 +585,7 @@ def plot_heatmap(
     ax.set_yticklabels(y_labels[::y_step], fontsize=_FS_TICK_SM)
 
     ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
-    ax.set_ylabel("Qubit / ELU", fontsize=_FS_AXIS)
+    ax.set_ylabel("Qubit / QPU", fontsize=_FS_AXIS)
     ax.set_title(title, fontsize=_FS_TITLE, fontweight="bold", pad=8)
 
     ax.legend(
@@ -635,8 +657,7 @@ def show_heatmaps(
         fig, (ax1, ax2) = plt.subplots(
             1, 2, figsize=(fig_w, height), facecolor=_FIG_BG,
         )
-    fig.suptitle("Schedule Heatmaps", fontsize=_FS_SUPTITLE, fontweight="bold")
-
+    # fig.suptitle("Schedule Heatmaps", fontsize=_FS_SUPTITLE, fontweight="bold")
     plot_heatmap(mat1, x_lbl1, y_lbl,
                  f"Case 1 — MPP  ({n_t1} Tock{'s' if n_t1!=1 else ''})",
                  cmap1, legend1, ax1)
@@ -678,7 +699,7 @@ def plot_gantt_case1(scheduler: "SubstrateScheduler", ax: plt.Axes) -> None:
     ax.set_ylim(-0.5, n_q - 0.5)
     ax.set_facecolor(_FIG_BG)
     ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
-    ax.set_ylabel("Qubit / ELU  (substrate order)", fontsize=_FS_AXIS)
+    ax.set_ylabel("Qubit / QPU  (substrate order)", fontsize=_FS_AXIS)
     ax.set_title("Case 1 — MPP Schedule", fontsize=_FS_TITLE, fontweight="bold")
     ax.spines[["top", "right"]].set_visible(False)
 
@@ -729,7 +750,7 @@ def plot_gantt_case2(cz: "CZScheduler", ax: plt.Axes) -> None:
     ax.set_ylim(-0.5, n_q - 0.5)
     ax.set_facecolor(_FIG_BG)
     ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
-    ax.set_ylabel("Qubit / ELU", fontsize=_FS_AXIS)
+    ax.set_ylabel("Qubit / QPU", fontsize=_FS_AXIS)
     ax.set_title("Case 2 — CZ-Gate Schedule", fontsize=_FS_TITLE, fontweight="bold")
     ax.spines[["top", "right"]].set_visible(False)
 
@@ -772,7 +793,7 @@ def plot_gantt_case3(cz_k: "CZSchedulerFixedAncilla", ax: plt.Axes) -> None:
     ax.set_ylim(-0.5, n_q - 0.5)
     ax.set_facecolor(_FIG_BG)
     ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
-    ax.set_ylabel("Qubit / ELU", fontsize=_FS_AXIS)
+    ax.set_ylabel("Qubit / QPU", fontsize=_FS_AXIS)
     ax.set_title(f"Case 3 — CZ  (k={cz_k.k} ancilla(s),  {len(cz_k.batches)} sub-batches)",
                  fontsize=_FS_TITLE, fontweight="bold")
     ax.spines[["top", "right"]].set_visible(False)
@@ -819,7 +840,7 @@ def show_gantt(
     else:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, height),
                                        facecolor=_FIG_BG)
-    fig.suptitle("Schedule Gantt Charts", fontsize=_FS_SUPTITLE, fontweight="bold")
+    # fig.suptitle("Schedule Gantt Charts", fontsize=_FS_SUPTITLE, fontweight="bold")
     plot_gantt_case1(scheduler, ax1)
     plot_gantt_case2(cz, ax2)
     if cz_k is not None:
@@ -873,11 +894,10 @@ def show_comparison_dashboard(
     subtitle = f"{report.graph_type}(n={report.graph_nodes}), d={report.code_distance}"
     if has_limited:
         subtitle += f", switch k={report.switch_k}"
-    fig.suptitle(
-        f"Resource Comparison — {subtitle}",
-        fontsize=_FS_SUPTITLE, fontweight="bold",
-    )
-
+    # fig.suptitle(
+    # f"Resource Comparison — {subtitle}",
+    # fontsize=_FS_SUPTITLE, fontweight="bold",
+    # )
     def _panel(ax: plt.Axes, vals: list, case_labels: list,
                case_colors: list, title: str,
                ylabel: str, fmt: str = "{}") -> None:
@@ -933,10 +953,10 @@ def show_comparison_dashboard(
     _panel(axes[0], tock_vals, cases, colors,
            "Total Tocks\n(logical time steps)", "Tocks")
     _panel(axes[1], anc_vals, cases, colors,
-           "Peak Ancilla ELUs\n(simultaneous demand)", "ELUs")
+           "Peak Ancilla QPUs\n(simultaneous demand)", "QPUs")
     _panel(axes[2], phys_vals, cases, colors,
            f"Total Physical Qubits\n(d={report.code_distance}, "
-           f"{report.phys_per_ELU}/ELU)",
+           f"{report.phys_per_ELU}/QPU)",
            "Physical qubits", fmt="{:,}")
 
     plt.tight_layout()
@@ -1028,17 +1048,15 @@ def show_qubit_occupancy(
         return
 
     n_q   = len(scheduler.G.nodes)
-    # Scale: tile strip needs width ∝ n_q; cap the figure width sensibly
-    strip_w = max(8, min(n_q * 0.55 + 2, 28))
+    # Page-native canvas: thesis 	extwidth wide, compact rows
     fig, axes = plt.subplots(
         n_tocks, 2,
-        figsize=(strip_w + 7, 5.5 * n_tocks),
+        figsize=(6.3, 2.05 * n_tocks),
         facecolor=_FIG_BG,
-        gridspec_kw={"width_ratios": [1, max(1, n_q // 6)]},
+        gridspec_kw={"width_ratios": [1, 1.4]},
     )
-    fig.suptitle("Qubit Occupancy per Tock  (Case 1 — MPP)",
-                 fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01)
-
+    # fig.suptitle("Qubit Occupancy per Tock  (Case 1 — MPP)",
+    # fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01)
     if n_tocks == 1:
         axes = [axes]   # normalise to list of rows
 
@@ -1070,9 +1088,9 @@ def show_qubit_occupancy(
         nx.draw_networkx_edges(scheduler.G, pos, edgelist=inactive,
                                width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
         nx.draw_networkx_edges(scheduler.G, pos, edgelist=active_edges,
-                               width=_LW_HEAVY, edge_color=_COL_MEASURE, ax=ax_graph)
+                               width=_LW_HEAVY, edge_color=_COL_NODE_MEAS, ax=ax_graph)
         nx.draw_networkx_nodes(scheduler.G, pos,
-                               node_size=700, node_color=node_colors,
+                               node_size=430, node_color=node_colors,
                                edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
                                ax=ax_graph)
 
@@ -1095,15 +1113,19 @@ def show_qubit_occupancy(
                       ha="center", fontsize=_FS_ANNOT, family="monospace",
                       color=_COL_TEXT_LIGHT, zorder=3)
 
-        ax_graph.legend(
-            handles=[
-                mpatches.Patch(facecolor=_COL_MEASURE, edgecolor=_COL_BORDER,
-                               lw=_LW_MEDIUM, label="X (measured)"),
-                mpatches.Patch(facecolor=_COL_NODE_NBR, edgecolor=_COL_BORDER,
-                               lw=_LW_MEDIUM, label="Z (neighbour)"),
-            ],
-            fontsize=_FS_LEGEND, frameon=False, loc="upper right",
-        )
+        if t == 0:
+            ax_graph.figure.legend(
+                handles=[
+                    mpatches.Patch(facecolor=_COL_MEASURE, edgecolor=_COL_BORDER,
+                                   lw=_LW_MEDIUM, label="X (measured)"),
+                    mpatches.Patch(facecolor=_COL_NODE_NBR, edgecolor=_COL_BORDER,
+                                   lw=_LW_MEDIUM, label="Z (neighbour)"),
+                ],
+                fontsize=_FS_LEGEND, frameon=False,
+                loc="upper left", bbox_to_anchor=(0.005, 1.0), ncol=1,
+            )
+        ax_graph.set_aspect("equal")
+        ax_graph.margins(0.14)
         ax_graph.set_title(f"Tock {t + 1} — Graph View",
                            fontsize=_FS_TITLE, fontweight="bold", pad=8)
         ax_graph.axis("off")
@@ -1128,7 +1150,7 @@ def show_qubit_occupancy_case3(
     Each row is one Tock.  Left panel = graph view.  Right panel = tile strip.
 
     Tile strip layout (n_q columns, one per data qubit):
-      Top row    — ancilla ELU: drawn ONLY above the data qubit it is docked
+      Top row    — ancilla QPU: drawn ONLY above the data qubit it is docked
                    with this tock.  Idle slots show a faint dashed outline.
       Bottom row — data qubits: always present; highlighted when active.
       Connector  — a short vertical line links each active (ancilla, qubit) pair
@@ -1237,7 +1259,7 @@ def show_qubit_occupancy_case3(
 
         # ── Tile strip ───────────────────────────────────────────────────────
         # n_q columns — one per data qubit.
-        # Top row  (y=1.5..2.5): ancilla ELU docked HERE if active this tock.
+        # Top row  (y=1.5..2.5): ancilla QPU docked HERE if active this tock.
         # Bottom row (y=0..1)  : data qubit tile (always present).
         # Active pair shares a color; a connector line links them.
         # Idle ancilla slots above inactive qubits show a faint dashed border.
@@ -1256,7 +1278,7 @@ def show_qubit_occupancy_case3(
         ax_tiles.axis("off")
         ax_tiles.set_title(
             f"Tock {t+1} — Tile Occupancy  "
-            f"({n_active} / {k} ancilla ELU(s) docked)",
+            f"({n_active} / {k} ancilla QPU(s) docked)",
             fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
 
@@ -1351,11 +1373,10 @@ def show_qubit_occupancy_case2(
         facecolor=_FIG_BG,
         gridspec_kw={"width_ratios": [1, max(1, n_q // 6)]},
     )
-    fig.suptitle(
-        "Qubit Occupancy per Tock  (Case 2 — CZ, unlimited ancillas)",
-        fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
-    )
-
+    # fig.suptitle(
+    # "Qubit Occupancy per Tock  (Case 2 — CZ, unlimited ancillas)",
+    # fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
+    # )
     if n_tocks == 1:
         axes = [axes]
 
@@ -1445,7 +1466,7 @@ def show_qubit_occupancy_case2(
         ax_tiles.axis("off")
         ax_tiles.set_title(
             f"Tock {t + 1} — Tile Occupancy  "
-            f"({n_active} ancilla ELU(s) docked)",
+            f"({n_active} ancilla QPU(s) docked)",
             fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
 
@@ -1526,9 +1547,8 @@ def show_port_utilization(
     n_panels = len(panels)
     fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 5),
                              facecolor=_FIG_BG, squeeze=False)
-    fig.suptitle("Switch Port Utilization per Tock Group / Sub-batch",
-                 fontsize=_FS_SUPTITLE, fontweight="bold")
-
+    # fig.suptitle("Switch Port Utilization per Tock Group / Sub-batch",
+    # fontsize=_FS_SUPTITLE, fontweight="bold")
     for idx, (title, schedule, k, xlabel, mode) in enumerate(panels):
         ax = axes[0][idx]
         n = len(schedule)
@@ -1537,9 +1557,10 @@ def show_port_utilization(
         ports_used = [item.n_ports_used for item in schedule]
         util_pct = [p / k * 100 for p in ports_used]
 
-        bars = ax.bar(x, ports_used, color=_PALETTE[0] if mode == "cz" else _PALETTE[2],
+        # Case colours fixed chapter-wide: Case 4 (MPP) plum, Case 5 (CZ) light navy
+        bars = ax.bar(x, ports_used, color="#7FA6CE" if mode == "cz" else "#9C5A8C",
                       edgecolor="white", zorder=2, alpha=_ALPHA_BAR)
-        ax.axhline(k, color=_PALETTE[3], linewidth=_LW_HEAVY, linestyle="--",
+        ax.axhline(k, color="#5A6473", linewidth=_LW_HEAVY, linestyle="--",
                    label=f"k = {k} (max ports)", zorder=3)
 
         # Label each bar with port count
@@ -1659,9 +1680,8 @@ def show_heatmaps_limited(
         k_str = f"k={mpp_lim.switch.k}"
     elif cz_lim is not None:
         k_str = f"k={cz_lim.switch.k}"
-    fig.suptitle(f"Schedule Heatmaps — k-Port Switch ({k_str})",
-                 fontsize=_FS_SUPTITLE, fontweight="bold")
-
+    # fig.suptitle(f"Schedule Heatmaps — k-Port Switch ({k_str})",
+    # fontsize=_FS_SUPTITLE, fontweight="bold")
     # Case 4: white | light blue (Z-neighbour) | deep blue (X-measured)
     cmap4 = ListedColormap([_COL_IDLE, _COL_HM_MPP_LIGHT, _COL_HM_MPP_DARK])
     legend4 = [
@@ -1718,8 +1738,8 @@ def _draw_switch_diagram(
     """
     Shared switch diagram renderer for Cases 4 and 5.
 
-    Layout: Data ELUs (top) → Switch(es) side-by-side (middle, single row
-    of k ports each) → Ancilla ELUs (bottom).
+    Layout: Data QPUs (top) → Switch(es) side-by-side (middle, single row
+    of k ports each) → Ancilla QPUs (bottom).
 
     Each switch has k generic ports. Data and ancilla ELUs connect to any
     port — they are NOT pre-split into data/ancilla rows.
@@ -1782,7 +1802,7 @@ def _draw_switch_diagram(
         if nd in data_active:
             data_positions[nd] = x + 0.4
 
-    ax.text(data_x_start + n_q / 2, data_y + 0.6, "Data ELUs",
+    ax.text(data_x_start + n_q / 2, data_y + 0.6, "Data QPUs",
             ha="center", fontsize=_FS_ANNOT, color=_COL_TEXT_LIGHT, fontweight="bold")
 
     # ── ANCILLA ELUs (bottom row) — show only active ones ────────────────
@@ -1811,7 +1831,7 @@ def _draw_switch_diagram(
         anc_positions[ai_idx] = x + 0.4
 
     if total_anc > 0:
-        ax.text(anc_x_start + total_anc / 2, anc_y - 0.7, "Ancilla ELUs",
+        ax.text(anc_x_start + total_anc / 2, anc_y - 0.7, "Ancilla QPUs",
                 ha="center", fontsize=_FS_ANNOT,
                 color=_SW_COLORS_DARK[2] if is_case4 else _SW_COLORS_DARK[0], fontweight="bold")
 
@@ -1927,10 +1947,10 @@ def show_qubit_occupancy_case4(
         gridspec_kw={"width_ratios": [1, max(1, n_q // 4)]},
     )
     sw_label = f"{n_sw}x k={k}" if n_sw > 1 else f"k={k}"
-    fig.suptitle(
-        f"Per-Tock Occupancy — Case 4 (MPP, {sw_label} port switch)",
-        fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
-    )
+    # fig.suptitle(
+    # f"Per-Tock Occupancy — Case 4 (MPP, {sw_label} port switch)",
+    # fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
+    # )
     if n_tocks == 1:
         axes = [axes]
 
@@ -1967,7 +1987,7 @@ def show_qubit_occupancy_case4(
         nx_local.draw_networkx_edges(G, pos, edgelist=inactive_edges,
                                      width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
         nx_local.draw_networkx_edges(G, pos, edgelist=active_edges,
-                                     width=_LW_HEAVY, edge_color=_COL_MEASURE, ax=ax_graph)
+                                     width=_LW_HEAVY, edge_color=_COL_NODE_MEAS, ax=ax_graph)
         nx_local.draw_networkx_nodes(G, pos, node_size=700,
                                      node_color=node_colors,
                                      edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
@@ -2073,10 +2093,10 @@ def show_qubit_occupancy_case5(
         gridspec_kw={"width_ratios": [1, max(1, n_q // 4)]},
     )
     sw_label = f"{n_sw}x k={k}" if n_sw > 1 else f"k={k}"
-    fig.suptitle(
-        f"Per-Tock Occupancy — Case 5 (CZ, {sw_label} port switch)",
-        fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
-    )
+    # fig.suptitle(
+    # f"Per-Tock Occupancy — Case 5 (CZ, {sw_label} port switch)",
+    # fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
+    # )
     if n_tocks == 1:
         axes = [axes]
 
