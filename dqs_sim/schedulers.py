@@ -730,6 +730,102 @@ class SubstrateScheduler:
 # Peak ancilla demand = max edges in any colour class.
 # Data ELUs = |V|.  Layout tiles = 4·|V| (same 2-row substrate).
 
+def misra_gries_edge_coloring(G: nx.Graph) -> dict[tuple, int]:
+    """
+    Misra & Gries (1992) constructive edge colouring.
+
+    Properly colours the edges of any simple graph with at most Δ(G)+1
+    colours, matching the Vizing bound — within one colour of the true
+    chromatic index in every case, and exactly optimal for class-2 graphs.
+
+    Returns a dict {(u, v): colour_index} with canonical u < v, colours
+    numbered from 0.
+    """
+    delta = max((d for _, d in G.degree()), default=0)
+    n_colors = delta + 1
+    coloring: dict[tuple, int] = {}
+
+    def key(a, b):
+        return (a, b) if a < b else (b, a)
+
+    def color_of(a, b):
+        return coloring.get(key(a, b))
+
+    def used_at(x) -> set:
+        return {coloring[key(x, w)] for w in G.neighbors(x)
+                if key(x, w) in coloring}
+
+    def free_at(x) -> set:
+        return set(range(n_colors)) - used_at(x)
+
+    def maximal_fan(u, v) -> list:
+        """Distinct neighbours f0=v, f1, ... of u where each coloured edge
+        (u, f_{i+1}) wears a colour free at f_i."""
+        fan = [v]
+        grown = True
+        while grown:
+            grown = False
+            last_free = free_at(fan[-1])
+            for w in G.neighbors(u):
+                if w in fan:
+                    continue
+                c = color_of(u, w)
+                if c is not None and c in last_free:
+                    fan.append(w)
+                    grown = True
+                    break
+        return fan
+
+    def invert_cd_path(u, c, d):
+        """Flip colours along the maximal path from u whose edges alternate
+        d, c, d, ...  (c is free at u, so the path leaves u on a d edge)."""
+        path = []
+        prev, want = u, d
+        while True:
+            nxt = None
+            for w in G.neighbors(prev):
+                if color_of(prev, w) == want and (not path or w != path[-1][0]):
+                    if path and key(prev, w) == key(*path[-1]):
+                        continue
+                    nxt = w
+                    break
+            if nxt is None:
+                break
+            path.append((prev, nxt))
+            prev, want = nxt, c if want == d else d
+        for a, b in path:
+            coloring[key(a, b)] = d if coloring[key(a, b)] == c else c
+
+    def is_fan(u, seq) -> bool:
+        for i in range(1, len(seq)):
+            c = color_of(u, seq[i])
+            if c is None or c not in free_at(seq[i - 1]):
+                return False
+        return True
+
+    for u, v in G.edges():
+        if key(u, v) in coloring:
+            continue
+        fan = maximal_fan(u, v)
+        c = min(free_at(u))
+        d = min(free_at(fan[-1]))
+        if c != d:
+            invert_cd_path(u, c, d)
+        # pick the longest fan prefix ending at a vertex where d is free
+        w_idx = None
+        for j in range(len(fan) - 1, -1, -1):
+            if d in free_at(fan[j]) and is_fan(u, fan[:j + 1]):
+                w_idx = j
+                break
+        assert w_idx is not None, "Misra-Gries invariant violated"
+        # rotate the prefix fan and colour the final edge d
+        for i in range(w_idx):
+            coloring[key(u, fan[i])] = coloring[key(u, fan[i + 1])]
+        coloring[key(u, fan[w_idx])] = d
+
+    return coloring
+
+
 class CZScheduler:
     """
     Schedule CZ-gate-based graph-state generation on a nearest-neighbour
@@ -739,11 +835,19 @@ class CZScheduler:
     ----------
     graph : nx.Graph
         Interaction graph G = (V, E).  Each edge (u, v) becomes one CZ gate.
+    coloring_mode : str
+        "greedy" (default) — fast one-pass colouring, up to 2Δ-1 colours.
+        "vizing" — Misra-Gries guaranteed Δ+1 colouring; the scheduler keeps
+        whichever of the two uses fewer colours.
     """
 
-    def __init__(self, graph: nx.Graph) -> None:
+    def __init__(self, graph: nx.Graph, coloring_mode: str = "greedy") -> None:
         self.G: nx.Graph = nx.Graph(graph)
         self.G.remove_edges_from(nx.selfloop_edges(self.G))
+
+        if coloring_mode not in ("greedy", "vizing"):
+            raise ValueError(f"Unknown colouring mode '{coloring_mode}'")
+        self.coloring_mode = coloring_mode
 
         if not nx.is_connected(self.G):
             print("Warning: graph is not connected.")
@@ -764,7 +868,9 @@ class CZScheduler:
         Greedy edge colouring — assigns each edge a colour such that no
         two edges incident on the same vertex share a colour.
 
-        Guarantees at most Δ(G)+1 colours (Vizing upper bound).
+        One pass, no recolouring: uses at most 2Δ(G)-1 colours in the worst
+        case (the Vizing-optimal Δ+1 is NOT guaranteed; see
+        misra_gries_edge_coloring for the guaranteed variant).
         Returns a dict  {(u, v): colour_index, ...}  with canonical u < v.
         """
         coloring: dict[tuple, int] = {}
@@ -798,7 +904,15 @@ class CZScheduler:
         cz_rounds : list of colour classes, each a list of (u, v) edge tuples.
                     Every round is executed in 2 Tocks (MPP step 1, MPP step 2).
         """
-        self.edge_coloring   = self._greedy_edge_coloring()
+        self.edge_coloring = self._greedy_edge_coloring()
+        if self.coloring_mode == "vizing" and self.edge_coloring:
+            mg = misra_gries_edge_coloring(self.G)
+            n_greedy = max(self.edge_coloring.values()) + 1
+            n_mg     = max(mg.values()) + 1
+            if n_mg < n_greedy:
+                print(f"  Colouring: Misra-Gries {n_mg} colours "
+                      f"(greedy found {n_greedy})")
+                self.edge_coloring = mg
         self.chromatic_index = (max(self.edge_coloring.values()) + 1
                                 if self.edge_coloring else 0)
         self.max_degree      = max((d for _, d in self.G.degree()), default=0)
@@ -1131,10 +1245,11 @@ class CZSchedulerFixedAncilla(CZScheduler):
     k     : int — ancilla pool size (≥ 1)
     """
 
-    def __init__(self, graph: nx.Graph, k: int) -> None:
+    def __init__(self, graph: nx.Graph, k: int,
+                 coloring_mode: str = "greedy") -> None:
         if k < 1:
             raise ValueError("Ancilla pool size k must be at least 1.")
-        super().__init__(graph)
+        super().__init__(graph, coloring_mode)
         self.k: int = k
         self.batches: list[list[tuple]] = []   # all sub-batches in order (each = 2 Tocks)
 
@@ -1303,8 +1418,9 @@ class CZSchedulerLimited(CZScheduler):
         self,
         graph: nx.Graph,
         switch: "KPortSwitch",
+        coloring_mode: str = "greedy",
     ) -> None:
-        super().__init__(graph)
+        super().__init__(graph, coloring_mode)
         self.switch = switch
         self.scheduled_batches: list[ScheduledBatch] = []
         self._total_tocks: int = 0

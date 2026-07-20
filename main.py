@@ -142,6 +142,9 @@ def make_parser() -> argparse.ArgumentParser:
                    help="Ancilla pool size k for Case 3 (--case 3 or all). "
                         "If omitted with --case all, auto-selects k = ⌊peak_colour_class/2⌋. "
                         "If omitted with --case 3, defaults to k=1.")
+    s.add_argument("--colouring", choices=["greedy", "vizing"], default="greedy",
+                   help="CZ edge-colouring mode: greedy (fast, up to 2*Delta-1 "
+                        "colours) or vizing (Misra-Gries, guaranteed Delta+1)")
     s.add_argument("--no-verify", action="store_true",
                    help="Skip chromatic / Vizing verification (faster for large graphs)")
 
@@ -286,7 +289,7 @@ def main() -> None:
         print("\n" + "#" * 52)
         print("#  CASE 2 — CZ Gate Scheduler  (unlimited ancillas)")
         print("#" * 52)
-        cz = CZScheduler(G)
+        cz = CZScheduler(G, coloring_mode=args.colouring)
         cz.run(visualize=args.visualize, verify_vizing=verify)
 
     # ── Case 3 ───────────────────────────────────────────────────────────
@@ -304,7 +307,7 @@ def main() -> None:
         print("\n" + "#" * 52)
         print(f"#  CASE 3 — CZ Gates, k={k} Ancilla ELU(s)")
         print("#" * 52)
-        cz_k = CZSchedulerFixedAncilla(G, k=k)
+        cz_k = CZSchedulerFixedAncilla(G, k=k, coloring_mode=args.colouring)
         cz_k.run(visualize=args.visualize, verify_vizing=verify)
 
     # ── Cases 4 & 5: build k-port switch ─────────────────────────────────────
@@ -333,7 +336,7 @@ def main() -> None:
         print("\n" + "#" * 60)
         print("#  CASE 5 — CZ Gates + k-Port Switch")
         print("#" * 60)
-        cz_lim = CZSchedulerLimited(G, switch)
+        cz_lim = CZSchedulerLimited(G, switch, coloring_mode=args.colouring)
         cz_lim.run(visualize=args.visualize, verify_vizing=verify)
 
     # ── Resource report ──────────────────────────────────────────────────────
