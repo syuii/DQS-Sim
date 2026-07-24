@@ -90,11 +90,10 @@ def _quiet(fn, *a, **kw):
 
 
 def t1_mpp(G: nx.Graph) -> int:
-    s = SubstrateScheduler(G)
-    _quiet(s.phase_1_reduction)
-    _quiet(s.phase_2_mapping)
-    s.schedule = _quiet(s.phase_3_scheduling)
-    return len(s.schedule)
+    # Layout-free distributed MPP (Case 1, DQC): MIS + conflict-graph
+    # colouring; no substrate mapping, no interval blocking.
+    from dqs_sim.schedulers import mpp_conflict_schedule
+    return len(_quiet(mpp_conflict_schedule, G))
 
 
 def t2_cz(G: nx.Graph) -> tuple[int, int]:
@@ -445,7 +444,7 @@ def fig_crossover(rows: list[dict], grids: list[dict], path: str) -> None:
                   fontweight="bold", pad=5)
     ax1.legend(fontsize=8, frameon=False, loc="upper left")
 
-    # (b) square grids: omega flat, congestion pushes T1 past T2
+    # (b) square grids: omega flat, T1 flat, MPP stays ahead at every size
     sides = [r["side"] for r in grids]
     ax2.plot(sides, [r["T1"] for r in grids], "o-", color=CASE_COL[1],
              linewidth=1.4, markersize=4.5, label="MPP, $T_1$")
@@ -455,7 +454,7 @@ def fig_crossover(rows: list[dict], grids: list[dict], path: str) -> None:
              linewidth=1.2, label=r"$\omega(\mathcal{C})$ (flat)")
     ax2.margins(y=0.14)
     ax2.set_xlabel(r"Grid side $\sqrt{n}$", fontsize=9)
-    ax2.set_title("(b) Congestion: grid graphs", fontsize=9.5,
+    ax2.set_title("(b) Grid graphs: MPP stays ahead", fontsize=9.5,
                   fontweight="bold", pad=5)
     ax2.legend(fontsize=8, frameon=True, framealpha=0.95, edgecolor="none",
                facecolor="white", loc="lower right")
@@ -464,7 +463,6 @@ def fig_crossover(rows: list[dict], grids: list[dict], path: str) -> None:
     # names the graph families, so no per-point labels are needed.
     surv = [r for r in rows if not r["graph"].startswith("PG")]
     pgs  = [r for r in rows if r["graph"].startswith("PG")]
-    tri  = [r for r in grids if r["side"] >= 5]
     rat = lambda r: r["omega"] / (2 * r["chi"])
     out = lambda r: r["T1"] / r["T2"]
     xs = [rat(r) for r in rows]
@@ -476,10 +474,9 @@ def fig_crossover(rows: list[dict], grids: list[dict], path: str) -> None:
     ax3.scatter([rat(r) for r in pgs], [out(r) for r in pgs], s=36,
                 color=CASE_COL[2], zorder=3,
                 label="incidence graphs $\\mathrm{PG}(2,q)$")
-    ax3.scatter([rat(r) for r in tri], [out(r) for r in tri], s=46,
-                marker="^", facecolor="white", edgecolor=RED_HL,
-                linewidth=1.3, zorder=3,
-                label=r"large grids ($5{\times}5$ to $7{\times}7$)")
+    ax3.scatter([rat(r) for r in grids], [out(r) for r in grids], s=36,
+                marker="^", color=CASE_COL[1], zorder=3,
+                label=r"square grids ($2{\times}2$ to $7{\times}7$)")
     ax3.axhline(1, color="#5A6473", linewidth=0.9, linestyle="--",
                 alpha=0.6)
     ax3.axvline(1, color="#5A6473", linewidth=0.9, linestyle="--",

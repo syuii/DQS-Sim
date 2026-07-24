@@ -76,6 +76,97 @@ Tock  = list[Block]
 # SubstrateScheduler
 # ---------------------------------------------------------------------------
 
+def exact_maximum_independent_set(G: nx.Graph) -> list:
+    """
+    Exact maximum independent set by branch and bound.
+
+    Reductions: a degree-0 vertex is always in some MIS; for a degree-1
+    vertex, including it (rather than its neighbour) is always optimal.
+    These make paths, cycles, and trees essentially polynomial.
+    Branching: on a highest-degree vertex v, either exclude v or include v
+    (removing v and its neighbours).  Bound: |chosen| + |remaining| cannot
+    beat the incumbent.
+
+    Deterministic: iteration follows NetworkX insertion order.
+    """
+    best: list = []
+    stack: list[tuple[nx.Graph, list]] = [(nx.Graph(G), [])]
+
+    while stack:
+        H, chosen = stack.pop()
+
+        # --- reductions: peel degree-0 and degree-1 vertices ---
+        reduced = True
+        while reduced:
+            reduced = False
+            for v, d in list(H.degree()):
+                if d == 0:
+                    chosen.append(v)
+                    H.remove_node(v)
+                    reduced = True
+                elif d == 1:
+                    u = next(iter(H.neighbors(v)))
+                    chosen.append(v)
+                    H.remove_nodes_from((v, u))
+                    reduced = True
+                    break   # degree view invalidated; restart scan
+
+        if len(chosen) + len(H) <= len(best):
+            continue
+        if len(H) == 0:
+            if len(chosen) > len(best):
+                best = list(chosen)
+            continue
+
+        v = max(H.degree, key=lambda x: (x[1], x[0]))[0]
+        # branch 1: exclude v
+        H_ex = H.copy()
+        H_ex.remove_node(v)
+        stack.append((H_ex, list(chosen)))
+        # branch 2: include v (v and all neighbours leave the graph)
+        H_in = H.copy()
+        H_in.remove_nodes_from([v] + list(H.neighbors(v)))
+        stack.append((H_in, chosen + [v]))
+
+    return best
+
+
+def mpp_conflict_schedule(G: nx.Graph, mis_mode: str = "auto") -> list[list]:
+    """
+    Layout-free MPP schedule for the distributed setting (Case 1, DQC).
+
+    MIS reduction, then colour the generator conflict graph directly:
+    generators whose supports are disjoint share a Tock.  No vertex-to-
+    substrate mapping and no interval blocking — appropriate when QPUs are
+    connected through a switch with no geometry.
+
+    Returns a list of Tocks, each a list of measured vertices.
+    """
+    s = SubstrateScheduler(G, mis_mode=mis_mode)
+    s.phase_1_reduction()
+    # Two generators conflict iff their supports ({v} + neighbours) overlap,
+    # i.e. iff their vertices are within distance 2 in G.  Building the
+    # conflict graph from 2-neighbourhoods is near-linear for bounded degree,
+    # unlike the all-pairs support check.
+    cover = set(s.to_measure)
+    conflict = nx.Graph()
+    conflict.add_nodes_from(s.to_measure)
+    for u in s.to_measure:
+        near = set(G.neighbors(u))
+        for w in list(near):
+            near.update(G.neighbors(w))
+        for v in near & cover:
+            if v != u:
+                conflict.add_edge(u, v)
+    colours = nx.coloring.greedy_color(conflict,
+                                       strategy="saturation_largest_first")
+    n_colours = max(colours.values(), default=-1) + 1
+    tocks: list[list] = [[] for _ in range(n_colours)]
+    for gen, c in colours.items():
+        tocks[c].append(gen)
+    return tocks
+
+
 class SubstrateScheduler:
     """
     Schedule stabilizer measurements for graph-state generation on a
@@ -86,11 +177,19 @@ class SubstrateScheduler:
     graph : nx.Graph
         Interaction graph.  Nodes are qubits; edges indicate that the two
         qubits participate in a joint stabilizer measurement.
+    mis_mode : str
+        "auto"   — exact MIS for |V| <= 20, greedy beyond (default);
+        "exact"  — exact branch-and-bound MIS at any size (may be slow);
+        "greedy" — seeded greedy maximal independent set at any size.
     """
 
-    def __init__(self, graph: nx.Graph) -> None:
+    def __init__(self, graph: nx.Graph, mis_mode: str = "auto") -> None:
         self.G: nx.Graph = nx.Graph(graph)
         self.G.remove_edges_from(nx.selfloop_edges(self.G))
+
+        if mis_mode not in ("auto", "exact", "greedy"):
+            raise ValueError(f"Unknown MIS mode '{mis_mode}'")
+        self.mis_mode = mis_mode
 
         if not nx.is_connected(self.G):
             print("Warning: graph is not connected. Results may vary.")
@@ -115,22 +214,23 @@ class SubstrateScheduler:
         return True
 
     def _exact_mis(self) -> list:
-        """Brute-force maximum independent set (feasible for |V| ≤ 20)."""
-        node_list = list(self.G.nodes)
-        for size in range(len(node_list), 0, -1):
-            for subset in combinations(node_list, size):
-                if self._is_independent_set(subset):
-                    return list(subset)
-        return []
+        """Exact maximum independent set (branch and bound)."""
+        return exact_maximum_independent_set(self.G)
 
     def find_maximum_independent_set(self) -> list:
         """
-        Return a Maximum Independent Set of G.
+        Return a Maximum Independent Set of G, per self.mis_mode.
 
-        Uses exact brute-force for |V| ≤ 20; falls back to a greedy
-        maximal independent set for larger graphs.
+        "exact" runs branch-and-bound at any size; "greedy" always uses the
+        seeded greedy maximal set; "auto" (default) is exact for |V| <= 20
+        and greedy beyond, preserving the original behaviour.
         """
         n = len(self.G)
+        if self.mis_mode == "exact":
+            return self._exact_mis()
+        if self.mis_mode == "greedy":
+            return nx.maximal_independent_set(self.G, seed=_LAYOUT_SEED)
+        # auto
         if n <= 20:
             return self._exact_mis()
         print(f"Warning: |V| = {n} > 20. Using greedy MIS (not necessarily maximum).")
@@ -1551,10 +1651,14 @@ class MPPSchedulerLimited:
         self,
         graph: nx.Graph,
         switch: "KPortSwitch",
+        mis_mode: str = "auto",
     ) -> None:
         self.G = nx.Graph(graph)
         self.G.remove_edges_from(nx.selfloop_edges(self.G))
         self.switch = switch
+        if mis_mode not in ("auto", "exact", "greedy"):
+            raise ValueError(f"Unknown MIS mode '{mis_mode}'")
+        self.mis_mode = mis_mode
 
         self.mis: list = []
         self.to_measure: list = []
@@ -1568,23 +1672,14 @@ class MPPSchedulerLimited:
 
     def _find_mis(self) -> list:
         """Compute MIS using the same logic as SubstrateScheduler."""
-        node_list = list(self.G.nodes)
-        n = len(node_list)
-
-        def is_independent(nodes):
-            for i, u in enumerate(nodes):
-                for v in nodes[i + 1:]:
-                    if self.G.has_edge(u, v):
-                        return False
-            return True
-
+        n = len(self.G)
+        if self.mis_mode == "exact":
+            return exact_maximum_independent_set(self.G)
+        if self.mis_mode == "greedy":
+            return nx.maximal_independent_set(self.G, seed=_LAYOUT_SEED)
         if n <= 20:
-            for size in range(n, 0, -1):
-                for subset in combinations(node_list, size):
-                    if is_independent(subset):
-                        return list(subset)
-            return []
-        return nx.maximal_independent_set(self.G)
+            return exact_maximum_independent_set(self.G)
+        return nx.maximal_independent_set(self.G, seed=_LAYOUT_SEED)
 
     def phase_1_reduction(self) -> None:
         self.mis = self._find_mis()

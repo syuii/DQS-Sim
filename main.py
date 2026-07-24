@@ -145,6 +145,9 @@ def make_parser() -> argparse.ArgumentParser:
     s.add_argument("--colouring", choices=["greedy", "vizing"], default="greedy",
                    help="CZ edge-colouring mode: greedy (fast, up to 2*Delta-1 "
                         "colours) or vizing (Misra-Gries, guaranteed Delta+1)")
+    s.add_argument("--mis", choices=["auto", "exact", "greedy"], default="auto",
+                   help="MIS mode for Cases 1/4: auto (exact for n<=20, greedy "
+                        "beyond), exact (branch-and-bound at any size), or greedy")
     s.add_argument("--no-verify", action="store_true",
                    help="Skip chromatic / Vizing verification (faster for large graphs)")
 
@@ -281,7 +284,7 @@ def main() -> None:
         print("\n" + "#" * 52)
         print("#  CASE 1 — Stabilizer MPP Scheduler")
         print("#" * 52)
-        scheduler = SubstrateScheduler(G)
+        scheduler = SubstrateScheduler(G, mis_mode=args.mis)
         scheduler.run(visualize=args.visualize, verify_chromatic=verify)
 
     # ── Case 2 ───────────────────────────────────────────────────────────────
@@ -328,7 +331,7 @@ def main() -> None:
             print("\n" + "#" * 60)
             print("#  CASE 4 — MPP Stabilizer + k-Port Switch")
             print("#" * 60)
-            mpp_lim = MPPSchedulerLimited(G, switch)
+            mpp_lim = MPPSchedulerLimited(G, switch, mis_mode=args.mis)
             mpp_lim.run(visualize=args.visualize)
 
     # ── Case 5 ───────────────────────────────────────────────────────────
