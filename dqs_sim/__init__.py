@@ -5,7 +5,7 @@ GoSC / Lattice Surgery resource estimator for graph state generation.
 
 Modules
 -------
-  schedulers  : SubstrateScheduler (Case 1), CZScheduler (Case 2),
+  schedulers  : MPPConflictScheduler (Case 1), CZScheduler (Case 2),
                 CZSchedulerFixedAncilla (Case 3),
                 MPPSchedulerLimited (Case 4), CZSchedulerLimited (Case 5)
   cost        : ResourceReport, compute_report()
@@ -20,6 +20,7 @@ from dqs_sim.schedulers import (
     CZScheduler,
     CZSchedulerFixedAncilla,
     CZSchedulerLimited,
+    MPPConflictScheduler,
     MPPSchedulerLimited,
     SubstrateScheduler,
 )
@@ -28,6 +29,7 @@ from dqs_sim.topology import KPortSwitch
 
 __all__ = [
     "SubstrateScheduler",
+    "MPPConflictScheduler",
     "CZScheduler",
     "CZSchedulerFixedAncilla",
     "CZSchedulerLimited",

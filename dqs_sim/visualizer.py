@@ -688,7 +688,7 @@ def show_heatmaps(
 # ============================================================================
 
 def plot_gantt_case1(scheduler: "SubstrateScheduler", ax: plt.Axes) -> None:
-    """Gantt chart for Case 1 — rows sorted by spectral substrate position."""
+    """Gantt chart for Case 1, with one row per data QPU."""
     G            = scheduler.G
     nodes_sorted = sorted(G.nodes, key=lambda nd: scheduler.mapping[nd])
     node_to_row  = {nd: i for i, nd in enumerate(nodes_sorted)}
@@ -699,7 +699,7 @@ def plot_gantt_case1(scheduler: "SubstrateScheduler", ax: plt.Axes) -> None:
     ax.set_ylim(-0.5, n_q - 0.5)
     ax.set_facecolor(_FIG_BG)
     ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
-    ax.set_ylabel("Qubit / QPU  (substrate order)", fontsize=_FS_AXIS)
+    ax.set_ylabel("Data QPU", fontsize=_FS_AXIS)
     ax.set_title("Case 1 — MPP Schedule", fontsize=_FS_TITLE, fontweight="bold")
     ax.spines[["top", "right"]].set_visible(False)
 
@@ -976,6 +976,7 @@ def _draw_occupancy_tiles(
     n_q:      int,
     tock_idx: int,
     palette:  list[str],
+    layout_free: bool = False,
 ) -> None:
     """
     Draw the ancilla (top) and data (bottom) tile strips for one tock.
@@ -1007,10 +1008,12 @@ def _draw_occupancy_tiles(
     # Active tiles — one colour per measurement in this tock
     for bi, b in enumerate(tock):
         col      = palette[bi % len(palette)]
-        L, R     = b["L"], b["R"]
         involved = [mapping[b["id"]]] + [mapping[nb] for nb in b["neighbors"]]
+        ancilla_positions = (
+            [bi] if layout_free else range(b["L"], b["R"] + 1)
+        )
 
-        for q in range(L, R + 1):          # ancilla span
+        for q in ancilla_positions:
             ax.add_patch(plt.Rectangle(
                 (q, 1.5), 1, 1,
                 facecolor=col, edgecolor="white", linewidth=_LW_THICK, alpha=_ALPHA_TILE,
@@ -1132,8 +1135,15 @@ def show_qubit_occupancy(
         ax_graph.margins(0.18)
 
         # ── Tile strip ───────────────────────────────────────────────────────
-        _draw_occupancy_tiles(ax_tiles, tock, scheduler.mapping,
-                              n_q, t, _PALETTE)
+        _draw_occupancy_tiles(
+            ax_tiles,
+            tock,
+            scheduler.mapping,
+            n_q,
+            t,
+            _PALETTE,
+            layout_free=getattr(scheduler, "layout_free", False),
+        )
 
     plt.tight_layout()
     _save_or_show(fig, save_path, "qubit occupancy", display)

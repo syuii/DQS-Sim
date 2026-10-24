@@ -214,7 +214,7 @@ def run_hardware() -> dict:
 # ── E4: MPP/CZ crossover on projective-plane incidence graphs ────────────────
 #
 # T1 is governed by the clique number of the generator conflict graph (cover
-# vertices within distance 2 of each other), while T2 = 2 chi'(G) is governed
+# vertices within distance 2 of each other), while T2 = 2 chi'_greedy(G) is governed
 # by the degree.  Incidence graphs of projective planes PG(2,q) drive the two
 # apart: every pair of points shares a line, so all point generators mutually
 # conflict (conflict clique ~ n/2) while the degree stays q+1 ~ sqrt(n).
@@ -487,7 +487,7 @@ def fig_crossover(rows: list[dict], grids: list[dict], path: str) -> None:
     ax3.axhspan(1.0, yhi, color=CASE_COL[2], alpha=0.08, zorder=0)
     ax3.axhspan(ylo, 1.0, color=CASE_COL[1], alpha=0.06, zorder=0)
     ax3.set_ylim(ylo, yhi)
-    ax3.set_xlabel(r"conflict ratio  $\omega(\mathcal{C})\,/\,2\chi'$"
+    ax3.set_xlabel(r"conflict ratio  $\omega(\mathcal{C})\,/\,2\chi'_{\mathrm{greedy}}$"
                    "  (rule predicts CZ past 1)", fontsize=9)
     ax3.set_ylabel(r"measured  $T_1/T_2$", fontsize=9)
     ax3.set_title("(c) Which operation wins", fontsize=9.5,

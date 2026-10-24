@@ -30,8 +30,8 @@ from dqs_sim import (
     CZSchedulerFixedAncilla,
     CZSchedulerLimited,
     KPortSwitch,
+    MPPConflictScheduler,
     MPPSchedulerLimited,
-    SubstrateScheduler,
     compute_report,
 )
 from dqs_sim.visualizer import (
@@ -73,7 +73,7 @@ def run_preset(graph_label: str, G: nx.Graph, k: int,
     print(f"{'='*60}")
 
     # ── Case 1 ──────────────────────────────────────────────────────────────
-    scheduler = SubstrateScheduler(G)
+    scheduler = MPPConflictScheduler(G)
     scheduler.run(visualize=False, verify_chromatic=False)
 
     # ── Case 2 ──────────────────────────────────────────────────────────────

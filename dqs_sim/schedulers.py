@@ -12,11 +12,11 @@ Reference layout: 4 · |V| tiles, one ancilla row and one data row.
 
 Usage
 -----
-    from substrate_scheduler import SubstrateScheduler
+    from dqs_sim.schedulers import MPPConflictScheduler
     import networkx as nx
 
     G = nx.path_graph(5)
-    scheduler = SubstrateScheduler(G)
+    scheduler = MPPConflictScheduler(G)
     scheduler.run()
 """
 
@@ -142,29 +142,9 @@ def mpp_conflict_schedule(G: nx.Graph, mis_mode: str = "auto") -> list[list]:
 
     Returns a list of Tocks, each a list of measured vertices.
     """
-    s = SubstrateScheduler(G, mis_mode=mis_mode)
-    s.phase_1_reduction()
-    # Two generators conflict iff their supports ({v} + neighbours) overlap,
-    # i.e. iff their vertices are within distance 2 in G.  Building the
-    # conflict graph from 2-neighbourhoods is near-linear for bounded degree,
-    # unlike the all-pairs support check.
-    cover = set(s.to_measure)
-    conflict = nx.Graph()
-    conflict.add_nodes_from(s.to_measure)
-    for u in s.to_measure:
-        near = set(G.neighbors(u))
-        for w in list(near):
-            near.update(G.neighbors(w))
-        for v in near & cover:
-            if v != u:
-                conflict.add_edge(u, v)
-    colours = nx.coloring.greedy_color(conflict,
-                                       strategy="saturation_largest_first")
-    n_colours = max(colours.values(), default=-1) + 1
-    tocks: list[list] = [[] for _ in range(n_colours)]
-    for gen, c in colours.items():
-        tocks[c].append(gen)
-    return tocks
+    scheduler = MPPConflictScheduler(G, mis_mode=mis_mode)
+    scheduler.schedule_mpp()
+    return [[block["id"] for block in tock] for tock in scheduler.schedule]
 
 
 class SubstrateScheduler:
@@ -808,7 +788,96 @@ class SubstrateScheduler:
 
 
 # ===========================================================================
-# CZScheduler — Case 2: Graph-state generation via CZ gates
+# MPPConflictScheduler - Case 1: layout-free distributed MPP scheduling
+# ===========================================================================
+
+class MPPConflictScheduler(SubstrateScheduler):
+    """
+    Schedule Case 1 directly on the generator conflict graph.
+
+    This is the distributed, layout-free scheduler used by the thesis.  It
+    keeps the MIS reduction from ``SubstrateScheduler`` but does not perform
+    spectral placement or interval scheduling on a linear substrate.
+    """
+
+    layout_free = True
+
+    def build_generator_graph(self) -> nx.Graph:
+        """Build the conflict graph from distance-two neighbourhoods."""
+        cover = set(self.to_measure)
+        conflict = nx.Graph()
+        conflict.add_nodes_from(self.to_measure)
+
+        for u in self.to_measure:
+            near = set(self.G.neighbors(u))
+            for neighbour in list(near):
+                near.update(self.G.neighbors(neighbour))
+            for v in near & cover:
+                if v != u:
+                    conflict.add_edge(u, v)
+
+        return conflict
+
+    def schedule_mpp(self) -> list[Tock]:
+        """Run MIS reduction and DSATUR conflict-graph colouring."""
+        self.phase_1_reduction()
+
+        # The mapping is an index only for common plotting helpers.  It has no
+        # routing or scheduling meaning in the layout-free model.
+        self.mapping = {node: index for index, node in enumerate(self.G.nodes)}
+
+        conflict = self.build_generator_graph()
+        colours = nx.coloring.greedy_color(
+            conflict, strategy="saturation_largest_first"
+        )
+        n_colours = max(colours.values(), default=-1) + 1
+        schedule: list[Tock] = [[] for _ in range(n_colours)]
+
+        for generator, colour in colours.items():
+            neighbours = list(self.G.neighbors(generator))
+            positions = [self.mapping[generator]]
+            positions.extend(self.mapping[node] for node in neighbours)
+            schedule[colour].append({
+                "id": generator,
+                "L": min(positions),
+                "R": max(positions),
+                "neighbors": neighbours,
+            })
+
+        self.schedule = schedule
+        return self.schedule
+
+    def run(self, visualize: bool = True, verify_chromatic: bool = True) -> None:
+        """Execute the layout-free Case 1 scheduler."""
+        self.schedule_mpp()
+
+        print("\n" + "=" * 52)
+        print("  DISTRIBUTED MPP SCHEDULING SUMMARY")
+        print("=" * 52)
+        print(f"  Vertices (qubits)      : {len(self.G.nodes)}")
+        print(f"  Edges (interactions)   : {len(self.G.edges)}")
+        print(f"  MIS size               : {len(self.mis)}  {self.mis}")
+        print(f"  Nodes to measure       : {len(self.to_measure)}  {self.to_measure}")
+        print(f"  Total time             : {len(self.schedule)} Tock(s)")
+        print("  Scheduling model       : layout-free conflict graph")
+        print("=" * 52)
+
+        for index, tock in enumerate(self.schedule, start=1):
+            measured = [block["id"] for block in tock]
+            print(f"\n  Tock {index}: {measured}")
+
+        gen_graph, coloring, _ = (
+            self.verify_chromatic_number()
+            if verify_chromatic
+            else (None, None, None)
+        )
+
+        if visualize and verify_chromatic:
+            self.show_generator_graph(gen_graph, coloring)
+
+
+# ===========================================================================
+# CZScheduler - Case 2: Graph-state generation via CZ gates
 # ===========================================================================
 #
 # Theory recap (from the GoSC notes)

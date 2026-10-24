@@ -31,8 +31,8 @@ import networkx as nx
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from dqs_sim.schedulers import (CZSchedulerLimited, MPPSchedulerLimited,
-                                SubstrateScheduler)
+from dqs_sim.schedulers import (CZSchedulerLimited, MPPConflictScheduler,
+                                MPPSchedulerLimited)
 from dqs_sim.topology import KPortSwitch
 
 mpl.rcParams.update({
@@ -393,9 +393,8 @@ def panels_c6(out: str) -> None:
     n = 6
     HALF, FULL = 3.05, 6.3
 
-    s = SubstrateScheduler(G)
-    _quiet(s.phase_1_reduction); _quiet(s.phase_2_mapping)
-    s.schedule = _quiet(s.phase_3_scheduling)
+    s = MPPConflictScheduler(G)
+    _quiet(s.schedule_mpp)
     ylab = [f"$Q_{i}$" for i in range(n)]
     m1 = _mat_mpp(s.schedule, s.mapping, n)
     heat_panel(m1, [f"T{t+1}" for t in range(m1.shape[1])], ylab,
@@ -441,9 +440,8 @@ def panels_k5(out: str) -> None:
     HALF, FULL = 3.05, 6.3
     ylab = [f"$Q_{i}$" for i in range(n)]
 
-    s = SubstrateScheduler(G)
-    _quiet(s.phase_1_reduction); _quiet(s.phase_2_mapping)
-    s.schedule = _quiet(s.phase_3_scheduling)
+    s = MPPConflictScheduler(G)
+    _quiet(s.schedule_mpp)
     m1 = _mat_mpp(s.schedule, s.mapping, n)
     heat_panel(m1, [f"T{t+1}" for t in range(m1.shape[1])], ylab,
                "(a) Case 1 — MPP (4 Tocks)", MPP_CMAP, MPP_LEG,

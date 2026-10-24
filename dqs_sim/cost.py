@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from dqs_sim.schedulers import (
         CZScheduler, CZSchedulerFixedAncilla, CZSchedulerLimited,
-        MPPSchedulerLimited, SubstrateScheduler,
+        MPPConflictScheduler, MPPSchedulerLimited,
     )
 
 
@@ -247,7 +247,7 @@ class ResourceReport:
 # ---------------------------------------------------------------------------
 
 def compute_report(
-    scheduler: "SubstrateScheduler",
+    scheduler: "MPPConflictScheduler",
     cz: "CZScheduler",
     code_distance: int,
     graph_type: str = "custom",
@@ -262,7 +262,7 @@ def compute_report(
 
     Parameters
     ----------
-    scheduler      : finished SubstrateScheduler (Case 1)
+    scheduler      : finished MPPConflictScheduler (Case 1)
     cz             : finished CZScheduler (Case 2)
     code_distance  : surface code distance d
     graph_type     : label string for display
