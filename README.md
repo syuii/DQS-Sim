@@ -46,7 +46,7 @@ Each ELU (elementary logic unit) holds one distance-*d* surface-code patch.
 
 - **Neither operation dominates.** MPP is faster on common graph families
   (paths, cycles, stars, grids, cliques), e.g. ×14 on an 8-vertex star and ×2 on
-  square grids at every size tested.
+  square grids (3×3 to 7×7).
 - **CZ wins on projective-plane incidence graphs**, where measurement conflicts grow
   faster than vertex degree. CZ is guaranteed to be no slower once
   ω(C) ≥ 2 · χ′(G).
@@ -92,7 +92,7 @@ Run `python main.py --help` for all options.
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--graph` | path, cycle, star, complete, grid, random, petersen, hypercube | `star` |
-| `--n` | node count (grid = n×n, hypercube = 2ⁿ) | `10` |
+| `--n` | size: node count for path/cycle/complete/random, leaves for star, side for grid (n×n), dimension for hypercube | `10` |
 | `--p` | edge probability for `random` | `0.3` |
 | `--graph-file` | edge-list file (one `u v` pair per line) | – |
 | `--case` | `1`–`5`, `both` (1+2), `all`, `limited` (4+5) | `both` |
@@ -136,6 +136,9 @@ DQS-Sim/
 ## Limitations and future work
 
 - Greedy edge colouring can use up to 2Δ−1 colours; use `--colouring vizing` for ≤ Δ+1.
+- The maximum independent set is exact up to 20 vertices and greedy beyond
+  (`--mis exact` forces the exact solver). On large grids the greedy set is not
+  maximum, so the reported MPP depth can exceed the optimal 4 Tocks.
 - Single optical switch; multi-switch network fabrics are future work.
 - Clifford operations only (no magic-state distillation cost).
 - Static compilation: the whole graph state is built before any measurement.

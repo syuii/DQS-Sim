@@ -72,7 +72,7 @@ class ResourceReport:
     # Case 2 (CZ gates, unlimited ancillas)
     chromatic_index:         int  # χ'(G)
     tocks_case2:             int  # = 2 × χ'(G)
-    vizing_class:            int  # 1 -> χ'= Δ,  2 -> χ'= Δ+1
+    vizing_class:            int | None  # 1 if a Δ-colouring was found, else None
     peak_ancilla_ELUs_case2: int  # max simultaneous CZ gates in one round
 
     # Physical (derived)
@@ -141,8 +141,8 @@ class ResourceReport:
                 ("Data ELUs",                  self.data_ELUs,              self.data_ELUs,           self.data_ELUs),
                 ("Peak ancilla ELUs",          self.peak_ancilla_ELUs_case1, self.peak_ancilla_ELUs_case2, c3_peak),
                 ("MIS size  (Case 1 only)",    self.mis_size,               "-",                     "-"),
-                ("Vizing class  (Case 2/3)",   "-",                          self.vizing_class,       self.vizing_class),
-                ("Chromatic index  χ'(G)",     "-",                          self.chromatic_index,    self.chromatic_index),
+                ("Vizing class  (Case 2/3)",   "-",                          self.vizing_class or "?", self.vizing_class or "?"),
+                ("Edge colours used  (≥ χ')",     "-",                          self.chromatic_index,    self.chromatic_index),
                 ("Ancilla pool  k  (Case 3)",   "-",                          "-",                    self.ancilla_k),
                 ("Sub-batches  (Case 3)",       "-",                          "-",                    self.n_batches_case3),
                 _sep(),
@@ -163,8 +163,8 @@ class ResourceReport:
                 ("Data ELUs",                  self.data_ELUs,               self.data_ELUs),
                 ("Peak ancilla ELUs",          self.peak_ancilla_ELUs_case1, self.peak_ancilla_ELUs_case2),
                 ("MIS size  (Case 1 only)",    self.mis_size,                "-"),
-                ("Vizing class  (Case 2)",     "-",                          self.vizing_class),
-                ("Chromatic index  χ'(G)",     "-",                          self.chromatic_index),
+                ("Vizing class  (Case 2)",     "-",                          self.vizing_class or "?"),
+                ("Edge colours used  (≥ χ')",     "-",                          self.chromatic_index),
                 _sep(),
                 ("Total Tocks",                self.tocks_case1,             self.tocks_case2),
                 ("Total physical qubits",      f"{self.total_phys_qubits_case1:,}",
@@ -335,7 +335,9 @@ def compute_report(
         peak_ancilla_ELUs_case1  = peak_anc_c1,
         chromatic_index          = chi_prime,
         tocks_case2              = tocks_c2,
-        vizing_class             = 1 if chi_prime == delta else 2,
+        # A Δ-colouring proves class 1; more colours may just be heuristic
+        # overhead, so the class is reported as unknown.
+        vizing_class             = 1 if chi_prime == delta else None,
         peak_ancilla_ELUs_case2  = peak_anc_c2,
         phys_per_ELU             = phys,
         data_ELUs                = n,

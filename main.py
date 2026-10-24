@@ -21,6 +21,8 @@ Graph types: path, cycle, star, complete, grid, random, petersen, hypercube
     grid -> n×n  |  hypercube -> 2^n nodes  |  random -> use --p for edge probability
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -318,9 +320,13 @@ def main() -> None:
 
     # Case 4
     if args.case in ("4", "limited", "all"):
-        max_support = 1 + max((d for _, d in G.degree()), default=0)
+        mpp_lim = MPPSchedulerLimited(G, switch, mis_mode=args.mis)
+        # Only measured generators need ports; MIS vertices start in |+> for free.
+        mpp_lim.phase_1_reduction()
+        max_support = 1 + max((G.degree(v) for v in mpp_lim.to_measure), default=0)
         min_k = max_support + 1  # data + 1 ancilla
         if switch is not None and min_k > switch.k:
+            mpp_lim = None
             print(f"\n  WARNING: Case 4 skipped: largest generator needs "
                   f"{max_support} data + 1 ancilla = {min_k} ports "
                   f"> k={switch.k}. Use --switch-k {min_k} or higher.")
@@ -328,7 +334,6 @@ def main() -> None:
             print("\n" + "#" * 60)
             print("#  CASE 4 - MPP Stabilizer + k-Port Switch")
             print("#" * 60)
-            mpp_lim = MPPSchedulerLimited(G, switch, mis_mode=args.mis)
             mpp_lim.run(visualize=args.visualize)
 
     # Case 5

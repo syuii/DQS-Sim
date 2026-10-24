@@ -22,6 +22,7 @@ Usage
 
 from __future__ import annotations
 
+import heapq
 import math
 from dataclasses import dataclass, field
 from itertools import combinations
@@ -125,6 +126,39 @@ def exact_maximum_independent_set(G: nx.Graph) -> list:
     return best
 
 
+def dsatur_colouring(G: nx.Graph) -> dict:
+    """
+    DSATUR vertex colouring in O((|V| + |E|) log |V|).
+
+    Gives exactly the same colouring as networkx's
+    ``greedy_color(G, strategy="saturation_largest_first")``: the next vertex
+    maximises (saturation, degree), ties going to the earliest vertex in
+    ``G.nodes`` order.  networkx rescans every uncoloured vertex at each step,
+    which is quadratic and too slow beyond ~10^4 generators, so a lazy heap
+    is used instead.
+    """
+    order = {v: i for i, v in enumerate(G.nodes)}
+    degree = dict(G.degree())
+    seen: dict = {v: set() for v in G.nodes}  # colours among coloured neighbours
+    colours: dict = {}
+    heap = [(0, -degree[v], order[v], v) for v in G.nodes]
+    heapq.heapify(heap)
+
+    while heap:
+        neg_sat, _, _, v = heapq.heappop(heap)
+        if v in colours or -neg_sat != len(seen[v]):
+            continue  # stale entry
+        c = 0
+        while c in seen[v]:
+            c += 1
+        colours[v] = c
+        for w in G.neighbors(v):
+            if w not in colours and c not in seen[w]:
+                seen[w].add(c)
+                heapq.heappush(heap, (-len(seen[w]), -degree[w], order[w], w))
+    return colours
+
+
 def mpp_conflict_schedule(G: nx.Graph, mis_mode: str = "auto") -> list[list]:
     """
     Layout-free MPP schedule for the distributed setting (Case 1, DQC).
@@ -213,7 +247,8 @@ class SubstrateScheduler:
     def phase_1_reduction(self) -> list:
         """Compute MIS and split nodes into free (MIS) and to-measure sets."""
         self.mis        = self.find_maximum_independent_set()
-        self.to_measure = [v for v in self.G.nodes if v not in self.mis]
+        mis = set(self.mis)
+        self.to_measure = [v for v in self.G.nodes if v not in mis]
         return self.mis
 
     # Phase 2: Spectral ordering
@@ -345,7 +380,7 @@ class SubstrateScheduler:
             return gen_graph, {}, 0
 
         # Upper bound: DSATUR greedy colouring
-        coloring   = nx.coloring.greedy_color(gen_graph, strategy="DSATUR")
+        coloring   = dsatur_colouring(gen_graph)
         chi_greedy = max(coloring.values()) + 1
 
         # Lower bound: clique number ω(S')
@@ -801,9 +836,7 @@ class MPPConflictScheduler(SubstrateScheduler):
         self.mapping = {node: index for index, node in enumerate(self.G.nodes)}
 
         conflict = self.build_generator_graph()
-        colours = nx.coloring.greedy_color(
-            conflict, strategy="saturation_largest_first"
-        )
+        colours = dsatur_colouring(conflict)
         n_colours = max(colours.values(), default=-1) + 1
         schedule: list[Tock] = [[] for _ in range(n_colours)]
 
@@ -1680,7 +1713,8 @@ class MPPSchedulerLimited:
 
     def phase_1_reduction(self) -> None:
         self.mis = self._find_mis()
-        self.to_measure = [v for v in self.G.nodes if v not in self.mis]
+        mis = set(self.mis)
+        self.to_measure = [v for v in self.G.nodes if v not in mis]
 
     # Phase 2: Build generators
 
@@ -1715,15 +1749,8 @@ class MPPSchedulerLimited:
 
     @staticmethod
     def _greedy_color(CG: nx.Graph) -> dict[int, int]:
-        """DSATUR-style greedy colouring of the conflict graph."""
-        coloring: dict[int, int] = {}
-        for node in CG.nodes:
-            used = {coloring[nb] for nb in CG.neighbors(node) if nb in coloring}
-            c = 0
-            while c in used:
-                c += 1
-            coloring[node] = c
-        return coloring
+        """DSATUR colouring of the conflict graph (same as Case 1)."""
+        return dsatur_colouring(CG)
 
     # Phase 4: Bin-pack colour classes into k-port groups
 
