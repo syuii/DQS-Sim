@@ -49,10 +49,10 @@ for row in zip(ns, t1s, t2g, t2v):
     print("{:<5}{:<9}{:<11}{}".format(*row))
 
 fig, ax = plt.subplots(figsize=(7.2, 4.4))
-ax.plot(ns, t1s, "o-", color=NAVY, lw=2.4, ms=5, label="Case 1 — MPP")
-ax.plot(ns, t2g, "s-", color=ORANGE, lw=2.4, ms=5, label="Case 2 — CZ (greedy)")
+ax.plot(ns, t1s, "o-", color=NAVY, lw=2.4, ms=5, label="Case 1 - MPP")
+ax.plot(ns, t2g, "s-", color=ORANGE, lw=2.4, ms=5, label="Case 2 - CZ (greedy)")
 ax.plot(ns, t2v, "^-", color=GREEN, lw=2.4, ms=5,
-        label="Case 2 — CZ (Misra-Gries)")
+        label="Case 2 - CZ (Misra-Gries)")
 ax.set_xlabel("complete graph size n", fontsize=12)
 ax.set_ylabel("Tocks", fontsize=12)
 ax.set_title("Complete graphs: MPP vs CZ under both colourings",
@@ -85,7 +85,7 @@ for ax, col, title in [
         ax.text(x, y, str(v), ha="center", va="center", fontsize=12, zorder=3)
     ax.set_title(title, fontsize=13, fontweight="bold")
     ax.set_aspect("equal"); ax.axis("off")
-fig.suptitle("K5 edge colouring — each colour is one 2-Tock round",
+fig.suptitle("K5 edge colouring - each colour is one 2-Tock round",
              fontsize=13)
 fig.tight_layout()
 fig.savefig(OUT / "mg_k5_colourings.png", bbox_inches="tight")

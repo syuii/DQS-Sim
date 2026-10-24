@@ -18,7 +18,7 @@ Usage
     Omit DIR to use the current directory. Individual --save-* flags override specific paths.
 
 Graph types: path, cycle, star, complete, grid, random, petersen, hypercube
-    grid → n×n  |  hypercube → 2^n nodes  |  random → use --p for edge probability
+    grid -> n×n  |  hypercube -> 2^n nodes  |  random -> use --p for edge probability
 """
 
 import argparse
@@ -104,7 +104,7 @@ CASE_CHOICES = ["1", "2", "3", "4", "5", "both", "all", "limited"]
 def make_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="main.py",
-        description="Graph State Generation Simulator — GoSC / Lattice Surgery",
+        description="Graph State Generation Simulator - GoSC / Lattice Surgery",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         epilog=(
             "Graph types: " + GRAPH_HELP + "\n\n"
@@ -162,7 +162,7 @@ def make_parser() -> argparse.ArgumentParser:
     # Cost estimation
     c = p.add_argument_group("Cost estimation")
     c.add_argument("--code-distance", type=int, default=7, metavar="D",
-                   help="Surface code distance d  →  2d²-1 physical qubits per ELU")
+                   help="Surface code distance d  ->  2d²-1 physical qubits per ELU")
 
     # Output
     o = p.add_argument_group("Output")
@@ -279,7 +279,7 @@ def main() -> None:
     # Case 1
     if args.case in ("1", "both", "all"):
         print("\n" + "#" * 52)
-        print("#  CASE 1 — Stabilizer MPP Scheduler")
+        print("#  CASE 1 - Stabilizer MPP Scheduler")
         print("#" * 52)
         scheduler = MPPConflictScheduler(G, mis_mode=args.mis)
         scheduler.run(visualize=args.visualize, verify_chromatic=verify)
@@ -287,7 +287,7 @@ def main() -> None:
     # Case 2
     if args.case in ("2", "both", "all"):
         print("\n" + "#" * 52)
-        print("#  CASE 2 — CZ Gate Scheduler  (unlimited ancillas)")
+        print("#  CASE 2 - CZ Gate Scheduler  (unlimited ancillas)")
         print("#" * 52)
         cz = CZScheduler(G, coloring_mode=args.colouring)
         cz.run(visualize=args.visualize, verify_vizing=verify)
@@ -305,7 +305,7 @@ def main() -> None:
                 k = 1
                 print(f"\n  [Case 3] --ancillas not set. Defaulting to k=1.")
         print("\n" + "#" * 52)
-        print(f"#  CASE 3 — CZ Gates, k={k} Ancilla ELU(s)")
+        print(f"#  CASE 3 - CZ Gates, k={k} Ancilla ELU(s)")
         print("#" * 52)
         cz_k = CZSchedulerFixedAncilla(G, k=k, coloring_mode=args.colouring)
         cz_k.run(visualize=args.visualize, verify_vizing=verify)
@@ -321,12 +321,12 @@ def main() -> None:
         max_support = 1 + max((d for _, d in G.degree()), default=0)
         min_k = max_support + 1  # data + 1 ancilla
         if switch is not None and min_k > switch.k:
-            print(f"\n  ⚠  Case 4 skipped: largest generator needs "
+            print(f"\n  WARNING: Case 4 skipped: largest generator needs "
                   f"{max_support} data + 1 ancilla = {min_k} ports "
                   f"> k={switch.k}. Use --switch-k {min_k} or higher.")
         else:
             print("\n" + "#" * 60)
-            print("#  CASE 4 — MPP Stabilizer + k-Port Switch")
+            print("#  CASE 4 - MPP Stabilizer + k-Port Switch")
             print("#" * 60)
             mpp_lim = MPPSchedulerLimited(G, switch, mis_mode=args.mis)
             mpp_lim.run(visualize=args.visualize)
@@ -334,7 +334,7 @@ def main() -> None:
     # Case 5
     if args.case in ("5", "limited", "all"):
         print("\n" + "#" * 60)
-        print("#  CASE 5 — CZ Gates + k-Port Switch")
+        print("#  CASE 5 - CZ Gates + k-Port Switch")
         print("#" * 60)
         cz_lim = CZSchedulerLimited(G, switch, coloring_mode=args.colouring)
         cz_lim.run(visualize=args.visualize, verify_vizing=verify)
@@ -359,7 +359,7 @@ def main() -> None:
         if args.export:
             report.export_json(args.export)
 
-        show = args.show  # True → display interactively even when saving
+        show = args.show  # True -> display interactively even when saving
 
         if args.show or args.gantt or args.save_gantt:
             show_gantt(scheduler, cz, cz_k=cz_k,

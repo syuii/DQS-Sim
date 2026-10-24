@@ -130,8 +130,7 @@ DQS-Sim/
 │   └── visualizer.py        # Gantt, heatmaps, 2D layout, occupancy, dashboard
 ├── examples/                # demo runs, figures and sweeps, validation
 ├── benchmarks/              # scalability benchmarks
-├── Results/                 # generated figures and reports
-└── legacy/                  # earlier single-file prototype (kept for reference)
+└── Results/                 # generated figures and reports (not tracked)
 ```
 
 ## Limitations and future work

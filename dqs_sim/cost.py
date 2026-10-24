@@ -72,7 +72,7 @@ class ResourceReport:
     # Case 2 (CZ gates, unlimited ancillas)
     chromatic_index:         int  # χ'(G)
     tocks_case2:             int  # = 2 × χ'(G)
-    vizing_class:            int  # 1 → χ'= Δ,  2 → χ'= Δ+1
+    vizing_class:            int  # 1 -> χ'= Δ,  2 -> χ'= Δ+1
     peak_ancilla_ELUs_case2: int  # max simultaneous CZ gates in one round
 
     # Physical (derived)
@@ -111,22 +111,22 @@ class ResourceReport:
     def export_json(self, path: str) -> None:
         with open(path, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
-        print(f"  Results exported → {path}")
+        print(f"  Results exported -> {path}")
 
     def print_table(self) -> None:
         W    = 36
         has3 = self.tocks_case3 is not None
 
-        c3_peak = f"k={self.ancilla_k}" if has3 else "—"
-        c3_tocks = str(self.tocks_case3) if has3 else "—"
-        c3_phys  = f"{self.total_phys_qubits_case3:,}" if has3 else "—"
-        c3_ratio = f"{self.tock_ratio_c3_c1:.2f}×" if has3 else "—"
+        c3_peak = f"k={self.ancilla_k}" if has3 else "-"
+        c3_tocks = str(self.tocks_case3) if has3 else "-"
+        c3_phys  = f"{self.total_phys_qubits_case3:,}" if has3 else "-"
+        c3_ratio = f"{self.tock_ratio_c3_c1:.2f}×" if has3 else "-"
 
         # Two-column or three-column separator rows
         def _sep():
             if has3:
-                return ("─" * (W - 2), "─" * 8, "─" * 8, "─" * 10)
-            return ("─" * (W - 2), "─" * 8, "─" * 8)
+                return ("-" * (W - 2), "-" * 8, "-" * 8, "-" * 10)
+            return ("-" * (W - 2), "-" * 8, "-" * 8)
 
         rows: list[tuple]
         if has3:
@@ -140,16 +140,16 @@ class ResourceReport:
                 _sep(),
                 ("Data ELUs",                  self.data_ELUs,              self.data_ELUs,           self.data_ELUs),
                 ("Peak ancilla ELUs",          self.peak_ancilla_ELUs_case1, self.peak_ancilla_ELUs_case2, c3_peak),
-                ("MIS size  (Case 1 only)",    self.mis_size,               "—",                     "—"),
-                ("Vizing class  (Case 2/3)",   "—",                          self.vizing_class,       self.vizing_class),
-                ("Chromatic index  χ'(G)",     "—",                          self.chromatic_index,    self.chromatic_index),
-                ("Ancilla pool  k  (Case 3)",   "—",                          "—",                    self.ancilla_k),
-                ("Sub-batches  (Case 3)",       "—",                          "—",                    self.n_batches_case3),
+                ("MIS size  (Case 1 only)",    self.mis_size,               "-",                     "-"),
+                ("Vizing class  (Case 2/3)",   "-",                          self.vizing_class,       self.vizing_class),
+                ("Chromatic index  χ'(G)",     "-",                          self.chromatic_index,    self.chromatic_index),
+                ("Ancilla pool  k  (Case 3)",   "-",                          "-",                    self.ancilla_k),
+                ("Sub-batches  (Case 3)",       "-",                          "-",                    self.n_batches_case3),
                 _sep(),
                 ("Total Tocks",                self.tocks_case1,             self.tocks_case2,        c3_tocks),
                 ("Total physical qubits",      f"{self.total_phys_qubits_case1:,}",
                                                f"{self.total_phys_qubits_case2:,}",                  c3_phys),
-                ("Tock ratio  vs Case 1",      "—",                          f"{self.tock_ratio_c2_c1:.2f}×", c3_ratio),
+                ("Tock ratio  vs Case 1",      "-",                          f"{self.tock_ratio_c2_c1:.2f}×", c3_ratio),
             ]
         else:
             rows = [
@@ -162,79 +162,79 @@ class ResourceReport:
                 _sep(),
                 ("Data ELUs",                  self.data_ELUs,               self.data_ELUs),
                 ("Peak ancilla ELUs",          self.peak_ancilla_ELUs_case1, self.peak_ancilla_ELUs_case2),
-                ("MIS size  (Case 1 only)",    self.mis_size,                "—"),
-                ("Vizing class  (Case 2)",     "—",                          self.vizing_class),
-                ("Chromatic index  χ'(G)",     "—",                          self.chromatic_index),
+                ("MIS size  (Case 1 only)",    self.mis_size,                "-"),
+                ("Vizing class  (Case 2)",     "-",                          self.vizing_class),
+                ("Chromatic index  χ'(G)",     "-",                          self.chromatic_index),
                 _sep(),
                 ("Total Tocks",                self.tocks_case1,             self.tocks_case2),
                 ("Total physical qubits",      f"{self.total_phys_qubits_case1:,}",
                                                f"{self.total_phys_qubits_case2:,}"),
-                ("Tock ratio  C2 / C1",        "—",                          f"{self.tock_ratio_c2_c1:.2f}×"),
+                ("Tock ratio  C2 / C1",        "-",                          f"{self.tock_ratio_c2_c1:.2f}×"),
             ]
 
         if has3:
-            hdr = f"║  {'Metric':<{W - 2}}║{'Case 1':^10}║{'Case 2':^10}║{'Case 3':^12}║"
-            print("\n" + "╔" + "═" * W + "╦" + "═" * 10 + "╦" + "═" * 10 + "╦" + "═" * 12 + "╗")
+            hdr = f"|  {'Metric':<{W - 2}}|{'Case 1':^10}|{'Case 2':^10}|{'Case 3':^12}|"
+            print("\n" + "+" + "=" * W + "+" + "=" * 10 + "+" + "=" * 10 + "+" + "=" * 12 + "+")
             print(hdr)
-            print("╠" + "═" * W + "╬" + "═" * 10 + "╬" + "═" * 10 + "╬" + "═" * 12 + "╣")
+            print("+" + "=" * W + "+" + "=" * 10 + "+" + "=" * 10 + "+" + "=" * 12 + "+")
             for row in rows:
-                if str(row[0]).startswith("─"):
-                    print("╟" + "─" * W + "╫" + "─" * 10 + "╫" + "─" * 10 + "╫" + "─" * 12 + "╢")
+                if str(row[0]).startswith("-"):
+                    print("+" + "-" * W + "+" + "-" * 10 + "+" + "-" * 10 + "+" + "-" * 12 + "+")
                 else:
                     label, c1, c2, c3 = row
-                    print(f"║  {str(label):<{W - 2}}║{str(c1):^10}║{str(c2):^10}║{str(c3):^12}║")
-            print("╚" + "═" * W + "╩" + "═" * 10 + "╩" + "═" * 10 + "╩" + "═" * 12 + "╝\n")
+                    print(f"|  {str(label):<{W - 2}}|{str(c1):^10}|{str(c2):^10}|{str(c3):^12}|")
+            print("+" + "=" * W + "+" + "=" * 10 + "+" + "=" * 10 + "+" + "=" * 12 + "+\n")
         else:
-            print("\n" + "╔" + "═" * W + "╦" + "═" * 10 + "╦" + "═" * 10 + "╗")
-            print(f"║  {'Metric':<{W - 2}}║{'Case 1':^10}║{'Case 2':^10}║")
-            print("╠" + "═" * W + "╬" + "═" * 10 + "╬" + "═" * 10 + "╣")
+            print("\n" + "+" + "=" * W + "+" + "=" * 10 + "+" + "=" * 10 + "+")
+            print(f"|  {'Metric':<{W - 2}}|{'Case 1':^10}|{'Case 2':^10}|")
+            print("+" + "=" * W + "+" + "=" * 10 + "+" + "=" * 10 + "+")
             for label, c1, c2 in rows:
-                if str(label).startswith("─"):
-                    print("╟" + "─" * W + "╫" + "─" * 10 + "╫" + "─" * 10 + "╢")
+                if str(label).startswith("-"):
+                    print("+" + "-" * W + "+" + "-" * 10 + "+" + "-" * 10 + "+")
                 else:
-                    print(f"║  {str(label):<{W - 2}}║{str(c1):^10}║{str(c2):^10}║")
-            print("╚" + "═" * W + "╩" + "═" * 10 + "╩" + "═" * 10 + "╝\n")
+                    print(f"|  {str(label):<{W - 2}}|{str(c1):^10}|{str(c2):^10}|")
+            print("+" + "=" * W + "+" + "=" * 10 + "+" + "=" * 10 + "+\n")
 
         # k-Port switch supplement (Cases 4 & 5)
         has4 = self.tocks_case4 is not None
         has5 = self.tocks_case5 is not None
         if has4 or has5:
             k_str    = str(self.switch_k) if self.switch_k else "?"
-            c4_tocks = str(self.tocks_case4) if has4 else "—"
-            c4_groups = str(self.n_groups_case4) if has4 else "—"
-            c4_ratio = f"{self.tock_ratio_c4_c1:.2f}×" if has4 else "—"
+            c4_tocks = str(self.tocks_case4) if has4 else "-"
+            c4_groups = str(self.n_groups_case4) if has4 else "-"
+            c4_ratio = f"{self.tock_ratio_c4_c1:.2f}×" if has4 else "-"
 
-            c5_tocks   = str(self.tocks_case5) if has5 else "—"
-            c5_batches = str(self.n_batches_case5) if has5 else "—"
-            c5_ratio   = f"{self.tock_ratio_c5_c2:.2f}×" if has5 else "—"
+            c5_tocks   = str(self.tocks_case5) if has5 else "-"
+            c5_batches = str(self.n_batches_case5) if has5 else "-"
+            c5_ratio   = f"{self.tock_ratio_c5_c2:.2f}×" if has5 else "-"
 
             n_sw = self.n_switches or 1
             sw_label = f"{n_sw}" if n_sw > 1 else "1"
-            max_cz = str(n_sw * (self.switch_k // 2)) if self.switch_k else "—"
+            max_cz = str(n_sw * (self.switch_k // 2)) if self.switch_k else "-"
             if n_sw > 1 and self.switch_k:
                 max_cz += f"  ({n_sw}×{self.switch_k // 2})"
 
             lim_rows = [
                 ("Switches",              sw_label,    sw_label),
                 ("Ports / switch  k",     k_str,       k_str),
-                ("Max CZ / sub-batch",    "—",         max_cz),
-                ("─", "─", "─"),
+                ("Max CZ / sub-batch",    "-",         max_cz),
+                ("-", "-", "-"),
                 ("Groups / Sub-batches",  c4_groups,   c5_batches),
                 ("Total Tocks",           c4_tocks,    c5_tocks),
-                ("─", "─", "─"),
+                ("-", "-", "-"),
                 ("Tock ratio  vs unlimited", c4_ratio,  c5_ratio),
             ]
 
-            print("╔" + "═" * W + "╦" + "═" * 10 + "╦" + "═" * 10 + "╗")
-            print(f"║  {'k-PORT SWITCH':<{W - 2}}"
-                  f"║{'Case 4':^10}║{'Case 5':^10}║")
-            print("╠" + "═" * W + "╬" + "═" * 10 + "╬" + "═" * 10 + "╣")
+            print("+" + "=" * W + "+" + "=" * 10 + "+" + "=" * 10 + "+")
+            print(f"|  {'k-PORT SWITCH':<{W - 2}}"
+                  f"|{'Case 4':^10}|{'Case 5':^10}|")
+            print("+" + "=" * W + "+" + "=" * 10 + "+" + "=" * 10 + "+")
             for label, c4, c5 in lim_rows:
-                if str(label).startswith("─"):
-                    print("╟" + "─" * W + "╫" + "─" * 10 + "╫" + "─" * 10 + "╢")
+                if str(label).startswith("-"):
+                    print("+" + "-" * W + "+" + "-" * 10 + "+" + "-" * 10 + "+")
                 else:
-                    print(f"║  {str(label):<{W - 2}}║{str(c4):^10}║{str(c5):^10}║")
-            print("╚" + "═" * W + "╩" + "═" * 10 + "╩" + "═" * 10 + "╝\n")
+                    print(f"|  {str(label):<{W - 2}}|{str(c4):^10}|{str(c5):^10}|")
+            print("+" + "=" * W + "+" + "=" * 10 + "+" + "=" * 10 + "+\n")
 
 
 # Factory

@@ -383,7 +383,7 @@ def fig_tradeoffs(hw: dict, path: str) -> None:
                     alpha=0.65, zorder=1)
     ax1.set_xlabel("Ancilla pool size $k_a$", fontsize=8.5)
     ax1.set_ylabel("Tocks", fontsize=8.5)
-    ax1.set_title("(a) Case 3 — ancilla-limited", fontsize=9,
+    ax1.set_title("(a) Case 3 - ancilla-limited", fontsize=9,
                   fontweight="bold", pad=5)
 
     # (b) T5 vs switch ports, with Case-4 feasibility thresholds
@@ -398,7 +398,7 @@ def fig_tradeoffs(hw: dict, path: str) -> None:
         ax2.axvline(d["k4_min"], color=col, linestyle="--", linewidth=1.0,
                     alpha=0.65, zorder=1)
     ax2.set_xlabel("Switch ports $k$", fontsize=8.5)
-    ax2.set_title("(b) Case 5 — switch-limited", fontsize=9,
+    ax2.set_title("(b) Case 5 - switch-limited", fontsize=9,
                   fontweight="bold", pad=5)
 
     for ax in (ax1, ax2):

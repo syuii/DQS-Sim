@@ -341,7 +341,7 @@ class SubstrateScheduler:
         tocks      = len(self.schedule)
 
         if not gen_graph.nodes:
-            print("\n  No generators to measure — trivially 0 Tocks.\n")
+            print("\n  No generators to measure - trivially 0 Tocks.\n")
             return gen_graph, {}, 0
 
         # Upper bound: DSATUR greedy colouring
@@ -370,7 +370,7 @@ class SubstrateScheduler:
         print(f"  Upper bound  χ(S')     : {chi_greedy}  (DSATUR colouring)")
         print(f"  Tocks achieved         : {tocks}")
         print(f"  MIS savings            : {chi_greedy - tocks} Tock(s) vs upper bound")
-        print(f"  Bound check            : {'✗ FAIL — tocks < ω (schedule bug)' if bug else '✓ PASS'}")
+        print(f"  Bound check            : {'FAIL - tocks < ω (schedule bug)' if bug else 'PASS'}")
         print("=" * 52 + "\n")
 
         return gen_graph, coloring, chi_greedy
@@ -462,10 +462,10 @@ class SubstrateScheduler:
         ]
         self._draw_graph(ax, colors)
         self._legend(ax, [
-            (_STYLE["node_mis"],     "MIS — initialise |+⟩"),
+            (_STYLE["node_mis"],     "MIS - initialise |+⟩"),
             (_STYLE["node_measure"], "Measure"),
         ])
-        self._apply_common_ax(ax, "Phase 1 — Maximum Independent Set")
+        self._apply_common_ax(ax, "Phase 1 - Maximum Independent Set")
 
     def plot_ordering(self, ax: plt.Axes) -> None:
         """
@@ -508,7 +508,7 @@ class SubstrateScheduler:
 
         ax.set_xlim(-0.9, n - 0.1)
         ax.set_ylim(-0.65, 0.65)
-        self._apply_common_ax(ax, "Phase 2 — Spectral Ordering")
+        self._apply_common_ax(ax, "Phase 2 - Spectral Ordering")
 
     def plot_tock(self, tock_idx: int, ax_graph: plt.Axes, ax_tiles: plt.Axes) -> None:
         """
@@ -551,7 +551,7 @@ class SubstrateScheduler:
             transform=ax_graph.transAxes,
             ha="center", fontsize=8, family="monospace", color="#555555",
         )
-        self._apply_common_ax(ax_graph, f"Tock {tock_idx + 1} — Graph View")
+        self._apply_common_ax(ax_graph, f"Tock {tock_idx + 1} - Graph View")
 
         # tile view
         ax_tiles.set_xlim(-0.6, n_q)
@@ -559,7 +559,7 @@ class SubstrateScheduler:
         ax_tiles.set_aspect("equal")
         ax_tiles.axis("off")
         ax_tiles.set_title(
-            f"Tock {tock_idx + 1} — Substrate Tiles",
+            f"Tock {tock_idx + 1} - Substrate Tiles",
             fontsize=_STYLE["title_size"], pad=10,
         )
 
@@ -648,7 +648,7 @@ class SubstrateScheduler:
             for i in range(n_colors)
         ]
         ax.legend(handles=handles, loc="upper right", fontsize=9, frameon=False)
-        self._apply_common_ax(ax, "Generator Graph — Chromatic Colouring")
+        self._apply_common_ax(ax, "Generator Graph - Chromatic Colouring")
 
     # Composite figure builders
 
@@ -658,7 +658,7 @@ class SubstrateScheduler:
         """
         fig, axes = plt.subplots(1, 3, figsize=(15, 5),
                                  facecolor=_STYLE["fig_bg"])
-        fig.suptitle("Substrate Scheduler — Overview",
+        fig.suptitle("Substrate Scheduler - Overview",
                      fontsize=14, fontweight="bold", y=1.01)
 
         self.plot_input_graph(axes[0])
@@ -690,7 +690,7 @@ class SubstrateScheduler:
             facecolor=_STYLE["fig_bg"],
             gridspec_kw={"width_ratios": [1, 1]},
         )
-        fig.suptitle("Substrate Scheduler — All Tocks",
+        fig.suptitle("Substrate Scheduler - All Tocks",
                      fontsize=14, fontweight="bold", y=1.01)
 
         # normalise axes shape when n_tocks == 1
@@ -746,7 +746,7 @@ class SubstrateScheduler:
             for b in tock:
                 parts = [f"X{self.mapping[b['id']]}"] + \
                         [f"Z{self.mapping[nb]}" for nb in b["neighbors"]]
-                span  = f"tiles {b['L']}–{b['R']}"
+                span  = f"tiles {b['L']}-{b['R']}"
                 print(f"    g_{b['id']:>2}:  {' ⊗ '.join(parts):<30} ({span})")
 
         # --- Chromatic verification ---
@@ -861,7 +861,7 @@ class MPPConflictScheduler(SubstrateScheduler):
 # Packing edges into parallel groups = edge colouring of G.
 # By Vizing's theorem:  χ'(G) ∈ {Δ(G),  Δ(G)+1}
 # Each colour class is one "CZ round".  Each round costs 2 Tocks.
-# → Total Tocks = 2 × χ'(G)
+# -> Total Tocks = 2 × χ'(G)
 # Space: each CZ needs 1 ancilla ELU, but ancillae are reused across rounds.
 # Peak ancilla demand = max edges in any colour class.
 # Data ELUs = |V|.  Layout tiles = 4·|V| (same 2-row substrate).
@@ -989,8 +989,8 @@ class CZScheduler:
             print("Warning: graph is not connected.")
 
         # Populated by run()
-        self.edge_coloring: dict[tuple, int] = {}  # edge → colour index
-        self.cz_rounds:     list[list[tuple]] = []  # colour_idx → [edge list]
+        self.edge_coloring: dict[tuple, int] = {}  # edge -> colour index
+        self.cz_rounds:     list[list[tuple]] = []  # colour_idx -> [edge list]
         self.chromatic_index: int = 0
         self.max_degree:      int = 0
         self._pos: dict = {}
@@ -1073,7 +1073,7 @@ class CZScheduler:
         print(f"  Max degree  Δ(G)        : {delta}")
         print(f"  Chromatic index χ'(G)   : {chi_prime}")
         print(f"  Class                   : {'Class 1 [χ′ = Δ]' if chi_prime == delta else 'Class 2 [χ′ = Δ+1]'}")
-        print(f"  Result                  : {'✓ PASS' if passed else '✗ FAIL'}")
+        print(f"  Result                  : {'PASS' if passed else 'FAIL'}")
         print("=" * 52 + "\n")
         return passed
 
@@ -1094,7 +1094,7 @@ class CZScheduler:
         print("=" * 52)
 
         for i, round_edges in enumerate(self.cz_rounds):
-            print(f"\n  CZ Round {i + 1}  (Tocks {2*i+1}–{2*i+2}):")
+            print(f"\n  CZ Round {i + 1}  (Tocks {2*i+1}-{2*i+2}):")
             for u, v in sorted(round_edges):
                 print(f"    CZ({u},{v}):  "
                       f"Tock {2*i+1}: Z{u}⊗Z_anc  |  "
@@ -1148,12 +1148,12 @@ class CZScheduler:
                 facecolor=palette[i % len(palette)],
                 edgecolor=_STYLE["node_edge_c"],
                 linewidth=1.2,
-                label=f"Round {i + 1}  (Tocks {2*i+1}–{2*i+2})",
+                label=f"Round {i + 1}  (Tocks {2*i+1}-{2*i+2})",
             )
             for i in range(self.chromatic_index)
         ]
         ax.legend(handles=handles, loc="upper right", fontsize=9, frameon=False)
-        ax.set_title("CZ Schedule — Edge Colouring",
+        ax.set_title("CZ Schedule - Edge Colouring",
                      fontsize=_STYLE["title_size"], pad=10)
         ax.axis("off")
         ax.margins(0.18)
@@ -1198,8 +1198,8 @@ class CZScheduler:
                                linewidths=_STYLE["node_lw"], ax=ax_graph)
         nx.draw_networkx_labels(self.G, pos, font_size=_STYLE["font_size"],
                                 font_color="#222222", ax=ax_graph)
-        ax_graph.set_title(f"CZ Round {round_idx+1} — Graph View "
-                           f"(Tocks {2*round_idx+1}–{2*round_idx+2})",
+        ax_graph.set_title(f"CZ Round {round_idx+1} - Graph View "
+                           f"(Tocks {2*round_idx+1}-{2*round_idx+2})",
                            fontsize=_STYLE["title_size"], pad=10)
         ax_graph.axis("off"); ax_graph.margins(0.18)
 
@@ -1209,7 +1209,7 @@ class CZScheduler:
         ax_tiles.set_ylim(-0.3, 3.5)
         ax_tiles.axis("off")
         ax_tiles.set_title(
-            f"CZ Round {round_idx+1} — Substrate Tiles  "
+            f"CZ Round {round_idx+1} - Substrate Tiles  "
             f"(Tock {2*round_idx+1}: Step 1 | Tock {2*round_idx+2}: Step 2)",
             fontsize=_STYLE["title_size"], pad=10,
         )
@@ -1250,7 +1250,7 @@ class CZScheduler:
             qu, qv = node_to_pos[u], node_to_pos[v]
             anc_pos = ei  # ancilla slot = edge index within this round
 
-            # Step 1: Z_u ⊗ Z_ancilla  → highlight data qubit u + ancilla slot
+            # Step 1: Z_u ⊗ Z_ancilla  -> highlight data qubit u + ancilla slot
             for step, qubit_pos in enumerate([qu, qv]):
                 x_off = step * n_q
                 # data tile
@@ -1276,7 +1276,7 @@ class CZScheduler:
         """Display edge-colouring overview."""
         fig, ax = plt.subplots(1, 1, figsize=(7, 5),
                                facecolor=_STYLE["fig_bg"])
-        fig.suptitle("CZ Scheduler — Edge Colouring Overview",
+        fig.suptitle("CZ Scheduler - Edge Colouring Overview",
                      fontsize=14, fontweight="bold")
         self.plot_edge_coloring(ax)
         plt.tight_layout()
@@ -1295,7 +1295,7 @@ class CZScheduler:
             facecolor=_STYLE["fig_bg"],
             gridspec_kw={"width_ratios": [1, 1]},
         )
-        fig.suptitle("CZ Scheduler — All Rounds",
+        fig.suptitle("CZ Scheduler - All Rounds",
                      fontsize=14, fontweight="bold", y=1.01)
 
         if n_rounds == 1:
@@ -1344,8 +1344,8 @@ class CZScheduler:
 # Total Tocks  =  2 × Σᵢ ⌈|Cᵢ| / k⌉
 # Lower bound on 2-Tock windows: T_lb = Σᵢ ⌈|Cᵢ| / k⌉  (achieved exactly)
 # Special cases
-# k ≥ max_i |Cᵢ|  →  same as Case 2 (no extra splitting)
-# k = 1            →  Total Tocks = 2·|E|  (all CZs sequential)
+# k ≥ max_i |Cᵢ|  ->  same as Case 2 (no extra splitting)
+# k = 1            ->  Total Tocks = 2·|E|  (all CZs sequential)
 
 class CZSchedulerFixedAncilla(CZScheduler):
     """
@@ -1411,7 +1411,7 @@ class CZSchedulerFixedAncilla(CZScheduler):
         n_t_c2 = 2 * self.chromatic_index
 
         print("\n" + "=" * 52)
-        print("  CASE 3 — CZ + k ANCILLA ELUs SUMMARY")
+        print("  CASE 3 - CZ + k ANCILLA ELUs SUMMARY")
         print("=" * 52)
         print(f"  Vertices (qubits)      : {len(self.G.nodes)}")
         print(f"  Edges (CZ gates)       : {len(self.G.edges)}")
@@ -1439,7 +1439,7 @@ class CZSchedulerFixedAncilla(CZScheduler):
                     continue
                 t1 = 2 * batch_num + 1
                 t2 = 2 * batch_num + 2
-                print(f"    Sub-batch {batch_num + 1}  (Tocks {t1}–{t2},"
+                print(f"    Sub-batch {batch_num + 1}  (Tocks {t1}-{t2},"
                       f" {len(chunk)} CZ gate(s)):")
                 for u, v in sorted(chunk):
                     print(f"      CZ({u},{v}):  "
@@ -1458,8 +1458,8 @@ class CZSchedulerFixedAncilla(CZScheduler):
         Run Case 3: edge-colour G, split colour classes into k-ancilla
         sub-batches, print summary.
         """
-        self.schedule_cz_rounds()  # edge colouring → self.cz_rounds
-        self.schedule_batches()  # sub-batch split  → self.batches
+        self.schedule_cz_rounds()  # edge colouring -> self.cz_rounds
+        self.schedule_batches()  # sub-batch split  -> self.batches
         self.print_summary()
 
         if verify_vizing:
@@ -1469,9 +1469,9 @@ class CZSchedulerFixedAncilla(CZScheduler):
             self.show_overview()  # inherited: edge-colouring overview
 
 
-# ╔╗
-# ║  CASE 5: CZ Gates + k-Port Switch (Limited Connectivity)          ║
-# ╚╝
+# ++
+# |  CASE 5: CZ Gates + k-Port Switch (Limited Connectivity)          |
+# ++
 # Inherits edge colouring from CZScheduler.  With a k-port switch, each
 # Tock can connect at most k ELUs.  Each CZ step uses 2 ports (1 data +
 # 1 ancilla), so at most ⌊k/2⌋ CZ gates run per sub-batch.  Colour
@@ -1578,7 +1578,7 @@ class CZSchedulerLimited(CZScheduler):
         max_per = self.switch.max_cz_per_step()
 
         print("\n" + "=" * 60)
-        print("  CASE 5 — CZ + k-PORT SWITCH SUMMARY")
+        print("  CASE 5 - CZ + k-PORT SWITCH SUMMARY")
         print("=" * 60)
         print(f"  Vertices (qubits)      : {len(self.G.nodes)}")
         print(f"  Edges (CZ gates)       : {len(self.G.edges)}")
@@ -1625,12 +1625,12 @@ class CZSchedulerLimited(CZScheduler):
             self.show_overview()
 
 
-# ╔╗
-# ║  CASE 4: MPP Stabilizer + k-Port Switch (Limited Connectivity)    ║
-# ╚╝
+# ++
+# |  CASE 4: MPP Stabilizer + k-Port Switch (Limited Connectivity)    |
+# ++
 # Standalone class (does not inherit SubstrateScheduler).
-# MIS reduction → generators → conflict graph (overlapping supports) →
-# greedy colouring → bin-pack each colour class into groups of ≤ k ELUs.
+# MIS reduction -> generators -> conflict graph (overlapping supports) ->
+# greedy colouring -> bin-pack each colour class into groups of ≤ k ELUs.
 # Each generator g_v has support {v} ∪ N(v).  All support qubits must
 # be simultaneously connected by the k-port switch.  Non-conflicting
 # generators can share a Tock if their combined unique ELUs ≤ k.
@@ -1861,7 +1861,7 @@ class MPPSchedulerLimited:
         total = self.n_tocks()
 
         print("\n" + "=" * 60)
-        print("  CASE 4 — MPP + k-PORT SWITCH SUMMARY")
+        print("  CASE 4 - MPP + k-PORT SWITCH SUMMARY")
         print("=" * 60)
         print(f"  Vertices (qubits)      : {len(self.G.nodes)}")
         print(f"  Edges (interactions)   : {len(self.G.edges)}")

@@ -1,7 +1,7 @@
 """
 figures.py
 ==========
-Purpose-built, page-native result figures, drawn with
+Result figures, drawn with
 one shared visual language so they read as a set:
 
   fig_c6_substrate.pdf   Case-1 substrate occupancy for C6: data + ancilla
@@ -32,7 +32,7 @@ import networkx as nx
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from dqs_sim.schedulers import (CZSchedulerLimited, MPPConflictScheduler,
-                                MPPSchedulerLimited)
+                                MPPSchedulerLimited, SubstrateScheduler)
 from dqs_sim.topology import KPortSwitch
 
 mpl.rcParams.update({
@@ -390,39 +390,39 @@ def panels_c6(out: str) -> None:
     ylab = [f"$Q_{i}$" for i in range(n)]
     m1 = _mat_mpp(s.schedule, s.mapping, n)
     heat_panel(m1, [f"T{t+1}" for t in range(m1.shape[1])], ylab,
-               "(a) Case 1 — MPP (3 Tocks)", MPP_CMAP, MPP_LEG,
+               "(a) Case 1 - MPP (3 Tocks)", MPP_CMAP, MPP_LEG,
                os.path.join(out, "c6_heat_c1.pdf"), HALF)
 
     c2 = CZScheduler(G); _quiet(c2.schedule_cz_rounds)
     m2 = _mat_cz(c2.cz_rounds, n)
     heat_panel(m2, [f"T{t+1}" for t in range(m2.shape[1])], ylab,
-               "(b) Case 2 — CZ (4 Tocks)", CZ_CMAP, CZ_LEG,
+               "(b) Case 2 - CZ (4 Tocks)", CZ_CMAP, CZ_LEG,
                os.path.join(out, "c6_heat_c2.pdf"), HALF, vline_every=2)
 
     c3 = CZSchedulerFixedAncilla(G, k=1); _quiet(c3.schedule_batches)
     m3 = _mat_cz(c3.batches, n)
     heat_panel(m3, [f"T{t+1}" for t in range(m3.shape[1])], ylab,
-               "(c) Case 3 — CZ, $k_a=1$ (12 Tocks)", CZ_CMAP, CZ_LEG,
+               "(c) Case 3 - CZ, $k_a=1$ (12 Tocks)", CZ_CMAP, CZ_LEG,
                os.path.join(out, "c6_heat_c3.pdf"), FULL, vline_every=2)
 
     sw = KPortSwitch(k=4, n_elus=2 * n, n_switches=1)
     m4s = MPPSchedulerLimited(G, sw); _quiet(m4s.schedule)
     m4 = _mat_case4(m4s.scheduled_groups, n)
     heat_panel(m4, [f"G{t+1}" for t in range(m4.shape[1])], ylab,
-               "(a) Case 4 — MPP, switch (3 Tocks)", MPP_CMAP, MPP_LEG,
+               "(a) Case 4 - MPP, switch (3 Tocks)", MPP_CMAP, MPP_LEG,
                os.path.join(out, "c6_heat_c4.pdf"), HALF)
 
     c5 = CZSchedulerLimited(G, sw); _quiet(c5.schedule_batches)
     m5 = _mat_cz([b.edges for b in c5.scheduled_batches], n)
     heat_panel(m5, [f"T{t+1}" for t in range(m5.shape[1])], ylab,
-               "(b) Case 5 — CZ, switch (8 Tocks)", CZ_CMAP, CZ_LEG,
+               "(b) Case 5 - CZ, switch (8 Tocks)", CZ_CMAP, CZ_LEG,
                os.path.join(out, "c6_heat_c5.pdf"), HALF, vline_every=2)
 
     port_panel([g.n_ports_used for g in m4s.scheduled_groups], 4,
-               "(a) Case 4 — MPP", "Group",
+               "(a) Case 4 - MPP", "Group",
                os.path.join(out, "c6_port_c4.pdf"), HALF, "#9C5A8C")
     port_panel([b.n_ports_used for b in c5.scheduled_batches], 4,
-               "(b) Case 5 — CZ", "Sub-batch",
+               "(b) Case 5 - CZ", "Sub-batch",
                os.path.join(out, "c6_port_c5.pdf"), HALF, "#7FA6CE")
 
 
@@ -436,19 +436,19 @@ def panels_k5(out: str) -> None:
     _quiet(s.schedule_mpp)
     m1 = _mat_mpp(s.schedule, s.mapping, n)
     heat_panel(m1, [f"T{t+1}" for t in range(m1.shape[1])], ylab,
-               "(a) Case 1 — MPP (4 Tocks)", MPP_CMAP, MPP_LEG,
+               "(a) Case 1 - MPP (4 Tocks)", MPP_CMAP, MPP_LEG,
                os.path.join(out, "k5_heat_c1.pdf"), HALF)
 
     c2 = CZScheduler(G); _quiet(c2.schedule_cz_rounds)
     m2 = _mat_cz(c2.cz_rounds, n)
     heat_panel(m2, [f"T{t+1}" for t in range(m2.shape[1])], ylab,
-               "(b) Cases 2, 3, 5 — CZ (14 Tocks)", CZ_CMAP, CZ_LEG,
+               "(b) Cases 2, 3, 5 - CZ (14 Tocks)", CZ_CMAP, CZ_LEG,
                os.path.join(out, "k5_heat_c2.pdf"), FULL, vline_every=2)
 
     sw = KPortSwitch(k=4, n_elus=2 * n, n_switches=1)
     c5 = CZSchedulerLimited(G, sw); _quiet(c5.schedule_batches)
     port_panel([b.n_ports_used for b in c5.scheduled_batches], 4,
-               "Case 5 — CZ port usage", "Sub-batch",
+               "Case 5 - CZ port usage", "Sub-batch",
                os.path.join(out, "k5_port_c5.pdf"), 0.55 * _W, "#7FA6CE")
 
 

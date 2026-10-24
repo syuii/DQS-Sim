@@ -315,7 +315,7 @@ def show_2d_layout(
     hw  = _adaptive_hw(pos)
     show_labels = n <= 30
 
-    # Build edge → tock map for Case 1
+    # Build edge -> tock map for Case 1
     edge_tock: dict[tuple, int] = {}
     for t, tock in enumerate(scheduler.schedule):
         for b in tock:
@@ -325,7 +325,7 @@ def show_2d_layout(
                 if key not in edge_tock:
                     edge_tock[key] = t
 
-    # Build edge → round map for Case 2
+    # Build edge -> round map for Case 2
     edge_round: dict[tuple, int] = {
         (min(u, v), max(u, v)): r
         for r, edges in enumerate(cz.cz_rounds)
@@ -384,14 +384,14 @@ def show_2d_layout(
         pos, c1_node_fill, c1_node_lw, c1_node_ec,
         c1_edge_col, c1_edge_lw, all_edges,
         ax1,
-        f"Case 1 — MPP  (edges coloured by Tock, {n_tocks} total)",
+        f"Case 1 - MPP  (edges coloured by Tock, {n_tocks} total)",
         hw, show_labels,
     )
     _draw_patch_layout(
         pos, c2_node_fill, c2_node_lw, c2_node_ec,
         c2_edge_col, c2_edge_lw, all_edges,
         ax2,
-        f"Case 2 — CZ Gates  (edges coloured by Round, {n_rounds} total)",
+        f"Case 2 - CZ Gates  (edges coloured by Round, {n_rounds} total)",
         hw, show_labels,
     )
 
@@ -399,7 +399,7 @@ def show_2d_layout(
     # Case 1 node legend
     ax1.legend(
         handles=[
-            mpatches.Patch(facecolor=_COL_MIS,     edgecolor=_COL_NODE_MIS,  lw=_LW_THICK, label="MIS — init |+⟩"),
+            mpatches.Patch(facecolor=_COL_MIS,     edgecolor=_COL_NODE_MIS,  lw=_LW_THICK, label="MIS - init |+⟩"),
             mpatches.Patch(facecolor=_COL_MEASURE,  edgecolor=_COL_NODE_MEAS, lw=_LW_THICK, label="Measured"),
         ],
         fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND,
@@ -415,7 +415,7 @@ def show_2d_layout(
     ]
     if n_tocks > 8:
         ax1_leg2_handles.append(
-            mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"… +{n_tocks - 8} more")
+            mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"... +{n_tocks - 8} more")
         )
     ax1.legend(
         handles=ax1_leg2_handles,
@@ -433,7 +433,7 @@ def show_2d_layout(
     ]
     if n_rounds > 8:
         ax2_handles.append(
-            mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"… +{n_rounds - 8} more")
+            mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"... +{n_rounds - 8} more")
         )
     ax2.legend(
         handles=ax2_handles,
@@ -464,7 +464,7 @@ def show_2d_layout(
             pos, c3_node_fill, c3_node_lw, c3_node_ec,
             c3_edge_col, c3_edge_lw, all_edges,
             ax3,
-            f"Case 3 — CZ Gates  (edges coloured by Sub-batch, k={cz_k.k}, {n_batches} total)",
+            f"Case 3 - CZ Gates  (edges coloured by Sub-batch, k={cz_k.k}, {n_batches} total)",
             hw, show_labels,
         )
         n_show3 = min(n_batches, 8)
@@ -475,7 +475,7 @@ def show_2d_layout(
         ]
         if n_batches > 8:
             ax3_handles.append(
-                mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"… +{n_batches - 8} more")
+                mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"... +{n_batches - 8} more")
             )
         ax3.legend(
             handles=ax3_handles,
@@ -651,10 +651,10 @@ def show_heatmaps(
         )
     # fig.suptitle("Schedule Heatmaps", fontsize=_FS_SUPTITLE, fontweight="bold")
     plot_heatmap(mat1, x_lbl1, y_lbl,
-                 f"Case 1 — MPP  ({n_t1} Tock{'s' if n_t1!=1 else ''})",
+                 f"Case 1 - MPP  ({n_t1} Tock{'s' if n_t1!=1 else ''})",
                  cmap1, legend1, ax1)
     plot_heatmap(mat2, x_lbl2, y_lbl,
-                 f"Case 2 — CZ  ({n_t2} Tock{'s' if n_t2!=1 else ''},"
+                 f"Case 2 - CZ  ({n_t2} Tock{'s' if n_t2!=1 else ''},"
                  f"  {cz.chromatic_index} rounds)",
                  cmap2, legend2, ax2,
                  vline_every=2)  # divider every CZ round
@@ -667,7 +667,7 @@ def show_heatmaps(
             mpatches.Patch(facecolor=_COL_HM_CZ_DARK, label="Step 2  (Z_v⊗Z_anc)"),
         ]
         plot_heatmap(mat3, x_lbl3, y_lbl,
-                     f"Case 3 — CZ  (k={cz_k.k},  {n_t3} Tock{'s' if n_t3!=1 else ''},  {len(cz_k.batches)} batches)",
+                     f"Case 3 - CZ  (k={cz_k.k},  {n_t3} Tock{'s' if n_t3!=1 else ''},  {len(cz_k.batches)} batches)",
                      cmap2, legend3, ax3,
                      vline_every=2)
 
@@ -690,7 +690,7 @@ def plot_gantt_case1(scheduler: "SubstrateScheduler", ax: plt.Axes) -> None:
     ax.set_facecolor(_FIG_BG)
     ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
     ax.set_ylabel("Data QPU", fontsize=_FS_AXIS)
-    ax.set_title("Case 1 — MPP Schedule", fontsize=_FS_TITLE, fontweight="bold")
+    ax.set_title("Case 1 - MPP Schedule", fontsize=_FS_TITLE, fontweight="bold")
     ax.spines[["top", "right"]].set_visible(False)
 
     x_lbl = [f"T{t+1}" for t in range(n_t)]
@@ -741,7 +741,7 @@ def plot_gantt_case2(cz: "CZScheduler", ax: plt.Axes) -> None:
     ax.set_facecolor(_FIG_BG)
     ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
     ax.set_ylabel("Qubit / QPU", fontsize=_FS_AXIS)
-    ax.set_title("Case 2 — CZ-Gate Schedule", fontsize=_FS_TITLE, fontweight="bold")
+    ax.set_title("Case 2 - CZ-Gate Schedule", fontsize=_FS_TITLE, fontweight="bold")
     ax.spines[["top", "right"]].set_visible(False)
 
     x_lbl = [f"T{t+1}" for t in range(n_t)]
@@ -784,7 +784,7 @@ def plot_gantt_case3(cz_k: "CZSchedulerFixedAncilla", ax: plt.Axes) -> None:
     ax.set_facecolor(_FIG_BG)
     ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
     ax.set_ylabel("Qubit / QPU", fontsize=_FS_AXIS)
-    ax.set_title(f"Case 3 — CZ  (k={cz_k.k} ancilla(s),  {len(cz_k.batches)} sub-batches)",
+    ax.set_title(f"Case 3 - CZ  (k={cz_k.k} ancilla(s),  {len(cz_k.batches)} sub-batches)",
                  fontsize=_FS_TITLE, fontweight="bold")
     ax.spines[["top", "right"]].set_visible(False)
 
@@ -971,7 +971,7 @@ def _draw_occupancy_tiles(
     ax.set_ylim(-0.3, 2.8)
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.set_title(f"Tock {tock_idx + 1} — Qubit Occupancy",
+    ax.set_title(f"Tock {tock_idx + 1} - Qubit Occupancy",
                  fontsize=_FS_TITLE, fontweight="bold", pad=8)
 
     # Row labels
@@ -1114,7 +1114,7 @@ def show_qubit_occupancy(
             )
         ax_graph.set_aspect("equal")
         ax_graph.margins(0.14)
-        ax_graph.set_title(f"Tock {t + 1} — Graph View",
+        ax_graph.set_title(f"Tock {t + 1} - Graph View",
                            fontsize=_FS_TITLE, fontweight="bold", pad=8)
         ax_graph.axis("off")
         ax_graph.margins(0.18)
@@ -1175,7 +1175,7 @@ def show_qubit_occupancy_case3(
         gridspec_kw={"width_ratios": [1, max(1, n_q // 6)]},
     )
     fig.suptitle(
-        f"Qubit Occupancy per Tock  (Case 3 — CZ, k={k} ancilla(s))",
+        f"Qubit Occupancy per Tock  (Case 3 - CZ, k={k} ancilla(s))",
         fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
     )
 
@@ -1247,7 +1247,7 @@ def show_qubit_occupancy_case3(
             fontsize=_FS_LEGEND, frameon=False, loc="upper right",
         )
         step_name = "Step 1 (Z_u⊗Z_anc)" if step == 0 else "Step 2 (Z_v⊗Z_anc)"
-        ax_graph.set_title(f"Tock {t+1} — Sub-batch {batch_idx+1}, {step_name}",
+        ax_graph.set_title(f"Tock {t+1} - Sub-batch {batch_idx+1}, {step_name}",
                            fontsize=_FS_TITLE, fontweight="bold", pad=8)
         ax_graph.axis("off")
         ax_graph.margins(0.18)
@@ -1259,7 +1259,7 @@ def show_qubit_occupancy_case3(
         # Active pair shares a color; a connector line links them.
         # Idle ancilla slots above inactive qubits show a faint dashed border.
 
-        # Build: node → (ancilla_index, tile_color)
+        # Build: node -> (ancilla_index, tile_color)
         active_map: dict = {}
         for i, (u, v) in enumerate(batch):
             qubit = u if step == 0 else v
@@ -1272,7 +1272,7 @@ def show_qubit_occupancy_case3(
         ax_tiles.set_aspect("equal")
         ax_tiles.axis("off")
         ax_tiles.set_title(
-            f"Tock {t+1} — Tile Occupancy  "
+            f"Tock {t+1} - Tile Occupancy  "
             f"({n_active} / {k} ancilla QPU(s) docked)",
             fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
@@ -1438,14 +1438,14 @@ def show_qubit_occupancy_case2(
         )
         step_name = "Step 1 (Z_u⊗Z_anc)" if step == 0 else "Step 2 (Z_v⊗Z_anc)"
         ax_graph.set_title(
-            f"Tock {t + 1} — CZ Round {round_idx + 1}, {step_name}",
+            f"Tock {t + 1} - CZ Round {round_idx + 1}, {step_name}",
             fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
         ax_graph.axis("off")
         ax_graph.margins(0.18)
 
         # Tile strip
-        # Build: node → (ancilla_index, tile_color) for qubits active this tock
+        # Build: node -> (ancilla_index, tile_color) for qubits active this tock
         active_map: dict = {}
         for i, (u, v) in enumerate(round_edges):
             qubit = u if step == 0 else v
@@ -1458,7 +1458,7 @@ def show_qubit_occupancy_case2(
         ax_tiles.set_aspect("equal")
         ax_tiles.axis("off")
         ax_tiles.set_title(
-            f"Tock {t + 1} — Tile Occupancy  "
+            f"Tock {t + 1} - Tile Occupancy  "
             f"({n_active} ancilla QPU(s) docked)",
             fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
@@ -1527,10 +1527,10 @@ def show_port_utilization(
     """
     panels = []
     if mpp_lim is not None and mpp_lim.scheduled_groups:
-        panels.append(("Case 4 — MPP (k-port)", mpp_lim.scheduled_groups,
+        panels.append(("Case 4 - MPP (k-port)", mpp_lim.scheduled_groups,
                         mpp_lim.switch.k, "Group", "mpp"))
     if cz_lim is not None and cz_lim.scheduled_batches:
-        panels.append(("Case 5 — CZ (k-port)", cz_lim.scheduled_batches,
+        panels.append(("Case 5 - CZ (k-port)", cz_lim.scheduled_batches,
                         cz_lim.switch.k, "Sub-batch", "cz"))
     if not panels:
         return
@@ -1648,10 +1648,10 @@ def show_heatmaps_limited(
     panels = []
     if mpp_lim is not None and mpp_lim.scheduled_groups:
         mat4, xlbl4 = _build_heatmap_case4_kport(mpp_lim)
-        panels.append((mat4, xlbl4, "Case 4 — MPP (k-port switch)", "c4"))
+        panels.append((mat4, xlbl4, "Case 4 - MPP (k-port switch)", "c4"))
     if cz_lim is not None and cz_lim.scheduled_batches:
         mat5, xlbl5 = _build_heatmap_case5_kport(cz_lim)
-        panels.append((mat5, xlbl5, "Case 5 — CZ (k-port switch)", "c5"))
+        panels.append((mat5, xlbl5, "Case 5 - CZ (k-port switch)", "c5"))
     if not panels:
         return
 
@@ -1725,8 +1725,8 @@ def _draw_switch_diagram(
     """
     Shared switch diagram renderer for Cases 4 and 5.
 
-    Layout: Data QPUs (top) → Switch(es) side-by-side (middle, single row
-    of k ports each) → Ancilla QPUs (bottom).
+    Layout: Data QPUs (top) -> Switch(es) side-by-side (middle, single row
+    of k ports each) -> Ancilla QPUs (bottom).
 
     Each switch has k generic ports. Data and ancilla ELUs connect to any
     port - they are NOT pre-split into data/ancilla rows.
@@ -1796,7 +1796,7 @@ def _draw_switch_diagram(
     total_anc = sum(sw_anc_count)
     anc_x_start = (max_x - total_anc) / 2 if total_anc > 0 else max_x / 2
     anc_positions = {}
-    anc_sw_map = {}  # anc_idx → switch_idx
+    anc_sw_map = {}  # anc_idx -> switch_idx
     ai = 0
     for si in range(n_sw):
         for _ in range(sw_anc_count[si]):
@@ -1876,7 +1876,7 @@ def _draw_switch_diagram(
                 ax.text(px + port_w / 2, sw_y, plbl, ha="center", va="center",
                         fontsize=_FS_ANNOT_SM, color=sw_color, fontweight="bold", zorder=3)
 
-        # Lines: data ELU → data port
+        # Lines: data ELU -> data port
         data_sorted = sorted(sw_data_nodes[si])
         for pi, nd in enumerate(data_sorted):
             if nd not in data_positions:
@@ -1888,7 +1888,7 @@ def _draw_switch_diagram(
             ax.plot([ex, px], [data_y - 0.35, sw_y + 0.2],
                     color=lc, linewidth=_LW_THICK, alpha=0.6, zorder=0)
 
-        # Lines: ancilla port → ancilla ELU
+        # Lines: ancilla port -> ancilla ELU
         anc_gi_start = sum(sw_anc_count[:si])
         for ai_off in range(n_anc_sw):
             anc_gi = anc_gi_start + ai_off
@@ -2005,7 +2005,7 @@ def show_qubit_occupancy_case4(
         )
         gen_ids = [m["id"] for m in sg.measurements]
         ax_graph.set_title(
-            f"Group {gi+1} — generators {gen_ids}",
+            f"Group {gi+1} - generators {gen_ids}",
             fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
         ax_graph.axis("off")
@@ -2034,7 +2034,7 @@ def show_qubit_occupancy_case4(
             k=k, n_sw=n_sw,
             sw_data_nodes=sw_data_nodes,
             sw_anc_count=sw_anc_count,
-            title=(f"Group {gi+1} — {sg.n_ports_used}/{total_ports} ports "
+            title=(f"Group {gi+1} - {sg.n_ports_used}/{total_ports} ports "
                    f"({n_sw} switch{'es' if n_sw > 1 else ''}, k={k}), 1 Tock"),
             is_case4=True,
         )
@@ -2142,7 +2142,7 @@ def show_qubit_occupancy_case5(
         )
         step_name = "Step 1 (Z_u x Z_anc)" if step == 0 else "Step 2 (Z_v x Z_anc)"
         ax_graph.set_title(
-            f"Tock {t+1} — Sub-batch {batch_idx+1}, {step_name}",
+            f"Tock {t+1} - Sub-batch {batch_idx+1}, {step_name}",
             fontsize=_FS_TITLE, fontweight="bold", pad=8,
         )
         ax_graph.axis("off")
@@ -2175,7 +2175,7 @@ def show_qubit_occupancy_case5(
             k=k, n_sw=n_sw,
             sw_data_nodes=sw_data_nodes_list,
             sw_anc_count=sw_anc_count,
-            title=(f"Tock {t+1} — {n_gates} CZ gate(s), "
+            title=(f"Tock {t+1} - {n_gates} CZ gate(s), "
                    f"{sb.n_ports_used}/{total_ports} ports "
                    f"({n_sw} switch{'es' if n_sw > 1 else ''}, k={k})"),
             is_case4=False,
@@ -2193,13 +2193,13 @@ def _save_or_show(
 ) -> None:
     """Save to file and/or display interactively.
 
-    display=True  → always call plt.show(), even when a save_path is given.
-    display=False → only show when save_path is None (original behaviour).
+    display=True  -> always call plt.show(), even when a save_path is given.
+    display=False -> only show when save_path is None (original behaviour).
     """
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight",
                     facecolor=fig.get_facecolor())
-        print(f"  {label.capitalize()} saved → {save_path}")
+        print(f"  {label.capitalize()} saved -> {save_path}")
     if not save_path or display:
         plt.show()
     plt.close(fig)

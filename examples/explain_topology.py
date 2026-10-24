@@ -51,7 +51,7 @@ def _draw_elu_circle(ax, x, y, r, label, color, text_color="white"):
 
 def make_figure(save_path=None):
     fig = plt.figure(figsize=(22, 18), facecolor=_BG)
-    fig.suptitle("k-Port Reconfigurable Switch — How Cases 4 & 5 Work",
+    fig.suptitle("k-Port Reconfigurable Switch - How Cases 4 & 5 Work",
                  fontsize=16, fontweight="bold", y=0.98)
 
     # ROW 1 LEFT: Logical graph + explanation
@@ -131,7 +131,7 @@ def make_figure(save_path=None):
     ax_cz.set_ylim(-1.5, 4.5)
     ax_cz.set_aspect("equal")
     ax_cz.axis("off")
-    ax_cz.set_title("Case 5 — CZ Bin-Packing (k=4, floor(k/2)=2 CZ gates per sub-batch)",
+    ax_cz.set_title("Case 5 - CZ Bin-Packing (k=4, floor(k/2)=2 CZ gates per sub-batch)",
                      fontsize=12, fontweight="bold", pad=10)
 
     # Show 3 sub-batches, each with 2 CZ gates, each taking 2 Tocks
@@ -212,7 +212,7 @@ def make_figure(save_path=None):
     ax_mpp.set_ylim(-1.5, 4.5)
     ax_mpp.set_aspect("equal")
     ax_mpp.axis("off")
-    ax_mpp.set_title("Case 4 — MPP Bin-Packing (k=4, generators must fit in k ports)",
+    ax_mpp.set_title("Case 4 - MPP Bin-Packing (k=4, generators must fit in k ports)",
                       fontsize=12, fontweight="bold", pad=10)
 
     # Show groups of generators
@@ -273,7 +273,7 @@ def make_figure(save_path=None):
 
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight", facecolor=_BG)
-        print(f"  Saved → {save_path}")
+        print(f"  Saved -> {save_path}")
     else:
         plt.show()
     plt.close(fig)

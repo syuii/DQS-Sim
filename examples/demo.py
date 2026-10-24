@@ -89,7 +89,7 @@ def run_preset(graph_label: str, G: nx.Graph, k: int,
         sk = switch_k if switch_k is not None else max(2, n // 2)
         n_elus = n * 2
         switch = KPortSwitch(k=sk, n_elus=n_elus)
-        print(f"\n  ── k-PORT SWITCH: {switch} ──")
+        print(f"\n  -- k-PORT SWITCH: {switch} --")
 
         mpp_lim = MPPSchedulerLimited(G, switch)
         mpp_lim.run(visualize=False)
@@ -132,10 +132,12 @@ def run_preset(graph_label: str, G: nx.Graph, k: int,
                               save_path=os.path.join(folder, "heatmap_limited.png"),
                               display=display)
 
-    print(f"  Saved → {folder}/")
+    print(f"  Saved -> {folder}/")
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     p = argparse.ArgumentParser(description="DQS-Sim preset demo runs")
     p.add_argument("--graph", default=None,
                    choices=[name for name, _, _ in PRESETS],
