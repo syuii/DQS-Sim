@@ -22,3 +22,7 @@ build/
 .venv/
 venv/
 env/
+
+# Local scratch / generated output
+tmp/
+examples/mg_validation/output/

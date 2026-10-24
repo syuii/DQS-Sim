@@ -1,7 +1,9 @@
 """Validate Misra-Gries colouring: proper, complete, and <= Delta+1 everywhere."""
 import sys
+from pathlib import Path
 
-sys.path.insert(0, r".")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 import networkx as nx
 
 from dqs_sim.schedulers import CZScheduler, misra_gries_edge_coloring
@@ -45,7 +47,7 @@ families = [
 ]
 
 # incidence graphs from the thesis crossover study
-sys.path.insert(0, r".\examples")
+sys.path.insert(0, str(REPO_ROOT / "examples"))
 from thesis_sweeps import build_incidence
 for q in (2, 3, 4, 5):
     families.append((f"PG(2,{q})", build_incidence(q)))

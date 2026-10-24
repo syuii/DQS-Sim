@@ -31,7 +31,7 @@ import networkx as nx
 from dqs_sim.cost import compute_report
 from dqs_sim.schedulers import (
     CZScheduler, CZSchedulerFixedAncilla, CZSchedulerLimited,
-    MPPSchedulerLimited, SubstrateScheduler,
+    MPPConflictScheduler, MPPSchedulerLimited,
 )
 from dqs_sim.topology import KPortSwitch
 from dqs_sim.visualizer import (show_comparison_dashboard, show_gantt, show_heatmaps,
@@ -245,6 +245,10 @@ def _build_switch(args, G: nx.Graph) -> KPortSwitch:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # Output uses symbols like — and χ; avoid UnicodeEncodeError on non-UTF-8
+    # consoles (e.g. Windows with a Japanese locale, cp932).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     args = make_parser().parse_args()
     verify = not args.no_verify
 
@@ -273,7 +277,7 @@ def main() -> None:
           f"|V|={len(G.nodes)}, |E|={len(G.edges)}, "
           f"Δ={max(d for _, d in G.degree()) if G.nodes else 0}")
 
-    scheduler: SubstrateScheduler        | None = None
+    scheduler: MPPConflictScheduler      | None = None
     cz:        CZScheduler               | None = None
     cz_k:      CZSchedulerFixedAncilla   | None = None
     mpp_lim:   MPPSchedulerLimited       | None = None
@@ -284,7 +288,7 @@ def main() -> None:
         print("\n" + "#" * 52)
         print("#  CASE 1 — Stabilizer MPP Scheduler")
         print("#" * 52)
-        scheduler = SubstrateScheduler(G, mis_mode=args.mis)
+        scheduler = MPPConflictScheduler(G, mis_mode=args.mis)
         scheduler.run(visualize=args.visualize, verify_chromatic=verify)
 
     # ── Case 2 ───────────────────────────────────────────────────────────────

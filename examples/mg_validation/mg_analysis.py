@@ -1,8 +1,10 @@
 """Three checks: complete-graph scaling with MG, K5 colouring visual, timings."""
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, r".")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 import matplotlib as mpl
 
 mpl.use("Agg")
@@ -15,9 +17,8 @@ from dqs_sim.schedulers import (CZScheduler, SubstrateScheduler,
 mpl.rcParams.update({"font.family": "sans-serif", "savefig.dpi": 200,
                      "figure.facecolor": "white", "savefig.facecolor": "white"})
 NAVY, ORANGE, GREEN, GREY = "#285A96", "#C1853C", "#4E8C6A", "#C9CDD4"
-OUT = (r"C:\Users\gordo\AppData\Local\Temp\output"
-       r"\dqs-sim"
-       r"\49412e3b-3c43-4d95-8525-e5ebc3eb8be2\scratchpad")
+OUT = Path(__file__).resolve().parent / "output"
+OUT.mkdir(exist_ok=True)
 
 import contextlib
 import io
@@ -60,7 +61,7 @@ ax.legend(fontsize=11, frameon=False)
 ax.grid(linestyle="--", alpha=0.3)
 ax.spines[["top", "right"]].set_visible(False)
 fig.tight_layout()
-fig.savefig(OUT + r"\mg_complete_scaling.png", bbox_inches="tight")
+fig.savefig(OUT / "mg_complete_scaling.png", bbox_inches="tight")
 plt.close(fig)
 
 # ── 2. K5 colouring, greedy vs MG, drawn on the graph ───────────────────────
@@ -87,7 +88,7 @@ for ax, col, title in [
 fig.suptitle("K5 edge colouring — each colour is one 2-Tock round",
              fontsize=13)
 fig.tight_layout()
-fig.savefig(OUT + r"\mg_k5_colourings.png", bbox_inches="tight")
+fig.savefig(OUT / "mg_k5_colourings.png", bbox_inches="tight")
 plt.close(fig)
 
 # ── 3. timing: greedy vs Misra-Gries ────────────────────────────────────────
