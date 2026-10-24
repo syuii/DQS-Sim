@@ -1,8 +1,7 @@
-"""Port-wiring worked-example figures for the thesis (chapter 6).
+"""Port-wiring worked-example figures for the k-port switch cases.
 
-Thesis-styled versions of the slide diagrams in defense/make_layouts.py:
-serif fonts, no side or bottom annotations (that prose lives in the LaTeX
-captions), panels sized for \textwidth.
+Serif fonts, no side or bottom annotations, panels sized for a
+single-column page.
 """
 
 import os

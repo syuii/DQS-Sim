@@ -46,9 +46,7 @@ from dqs_sim.visualizer import (
     show_qubit_occupancy_case3,
 )
 
-# ---------------------------------------------------------------------------
 # Presets: (graph_label, graph_object, ancilla_k_for_case3)
-# ---------------------------------------------------------------------------
 
 PRESETS = [
     ("path",     nx.path_graph(8),                           2),
@@ -72,19 +70,19 @@ def run_preset(graph_label: str, G: nx.Graph, k: int,
     print(f"  {graph_label.upper()}  |V|={n}  |E|={len(G.edges)}  k={k}")
     print(f"{'='*60}")
 
-    # ── Case 1 ──────────────────────────────────────────────────────────────
+    # Case 1
     scheduler = MPPConflictScheduler(G)
     scheduler.run(visualize=False, verify_chromatic=False)
 
-    # ── Case 2 ──────────────────────────────────────────────────────────────
+    # Case 2
     cz = CZScheduler(G)
     cz.run(visualize=False, verify_vizing=False)
 
-    # ── Case 3 ──────────────────────────────────────────────────────────────
+    # Case 3
     cz_k = CZSchedulerFixedAncilla(G, k=k)
     cz_k.run(visualize=False, verify_vizing=False)
 
-    # ── Cases 4 & 5 (k-port switch) ────────────────────────────────────────
+    # Cases 4 & 5 (k-port switch)
     mpp_lim = None
     cz_lim = None
     if limited:
@@ -99,14 +97,14 @@ def run_preset(graph_label: str, G: nx.Graph, k: int,
         cz_lim = CZSchedulerLimited(G, switch)
         cz_lim.run(visualize=False, verify_vizing=False)
 
-    # ── Report ───────────────────────────────────────────────────────────────
+    # Report
     report = compute_report(scheduler, cz, code_distance=7,
                             graph_type=graph_label, cz_k=cz_k,
                             mpp_limited=mpp_lim, cz_limited=cz_lim)
     report.print_table()
     report.export_json(os.path.join(folder, "report.json"))
 
-    # ── Figures ───────────────────────────────────────────────────────────────
+    # Figures
     show_gantt(scheduler, cz, cz_k=cz_k,
                save_path=os.path.join(folder, "gantt.png"), display=display)
     show_heatmaps(scheduler, cz, cz_k=cz_k,

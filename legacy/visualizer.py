@@ -6,7 +6,7 @@ Clean, scalable visualisations for the graph state generation simulator.
 Four main outputs
 -----------------
   show_heatmaps(scheduler, cz)
-      Compact schedule matrix — works at any vertex count.
+      Compact schedule matrix - works at any vertex count.
       Rows = qubits, columns = tocks, colour = role.
 
   show_2d_layout(scheduler, cz)
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from substrate_scheduler import CZScheduler, CZSchedulerFixedAncilla, SubstrateScheduler
 
 
-# ── Colour palette (perceptually distinct, print-safe) ──────────────────────
+# Colour palette (perceptually distinct, print-safe)
 _PALETTE = [
     "#4C72B0", "#DD8452", "#55A868", "#C44E52",
     "#8172B2", "#937860", "#DA8BC3", "#8C8C8C",
@@ -45,17 +45,15 @@ _PALETTE = [
 ]
 
 # Semantic colours
-_COL_IDLE     = "#F4F4F4"   # idle patch fill
-_COL_MIS      = "#A8D8A8"   # MIS (|+⟩ init) fill
-_COL_MEASURE  = "#F4A7A7"   # to-measure fill
-_COL_BORDER   = "#555555"   # default patch border
-_COL_EDGE_OFF = "#DDDDDD"   # idle edge colour
+_COL_IDLE     = "#F4F4F4"  # idle patch fill
+_COL_MIS      = "#A8D8A8"  # MIS (|+⟩ init) fill
+_COL_MEASURE  = "#F4A7A7"  # to-measure fill
+_COL_BORDER   = "#555555"  # default patch border
+_COL_EDGE_OFF = "#DDDDDD"  # idle edge colour
 _FIG_BG       = "white"
 
 
-# ============================================================================
 # Internal geometry helpers
-# ============================================================================
 
 def _normalize_pos(pos: dict, margin: float = 0.10) -> dict:
     """Scale spring-layout positions to [margin, 1-margin]²."""
@@ -104,7 +102,7 @@ def _border_exit(cx: float, cy: float,
     return cx + dx * t, cy + dy * t
 
 
-# ── Tick helpers ─────────────────────────────────────────────────────────────
+# Tick helpers
 
 def _smart_ticks(ax: plt.Axes, n: int, axis: str = "x",
                  labels: list[str] | None = None, fontsize: int = 8) -> None:
@@ -122,18 +120,16 @@ def _fig_height(n: int) -> float:
     return max(4.0, min(n * 0.30 + 2.5, 22.0))
 
 
-# ============================================================================
 # 2D Patch Layout
-# ============================================================================
 
 def _draw_patch_layout(
-    pos:        dict,           # normalised {node: (x, y)}
-    node_fill:  dict,           # {node: hex}
-    node_lw:    dict,           # {node: float}
-    node_ec:    dict,           # {node: hex}
-    edge_col:   dict,           # {(u,v): hex}  canonical u < v
-    edge_lw:    dict,           # {(u,v): float}
-    edges:      list,           # all edges to draw (from G)
+    pos:        dict,  # normalised {node: (x, y)}
+    node_fill:  dict,  # {node: hex}
+    node_lw:    dict,  # {node: float}
+    node_ec:    dict,  # {node: hex}
+    edge_col:   dict,  # {(u,v): hex}  canonical u < v
+    edge_lw:    dict,  # {(u,v): float}
+    edges:      list,  # all edges to draw (from G)
     ax:         plt.Axes,
     title:      str,
     hw:         float,
@@ -149,7 +145,7 @@ def _draw_patch_layout(
     ax.axis("off")
     ax.set_title(title, fontsize=12, fontweight="bold", pad=10)
 
-    # ── edges ────────────────────────────────────────────────────────────────
+    # edges
     for u, v in edges:
         cx_u, cy_u = pos[u]
         cx_v, cy_v = pos[v]
@@ -162,7 +158,7 @@ def _draw_patch_layout(
                 color=col, linewidth=lw,
                 solid_capstyle="round", zorder=1)
 
-    # ── patches ──────────────────────────────────────────────────────────────
+    # patches
     for node, (cx, cy) in pos.items():
         fc  = node_fill.get(node, _COL_IDLE)
         ec  = node_ec.get(node, _COL_BORDER)
@@ -202,9 +198,9 @@ def show_2d_layout(
     """
     Two-panel figure showing ELUs as physical surface-code patches.
 
-    Left  — Case 1: MIS nodes (green) vs to-measure (pink).
+    Left  - Case 1: MIS nodes (green) vs to-measure (pink).
              Edges coloured by the Tock in which they are activated.
-    Right — Case 2: Edges coloured by CZ round.
+    Right - Case 2: Edges coloured by CZ round.
 
     When cz_k is provided, a third panel is added for Case 3 with edges
     coloured by sub-batch index.
@@ -240,7 +236,7 @@ def show_2d_layout(
     n_tocks   = len(scheduler.schedule)
     n_rounds  = cz.chromatic_index
 
-    # ── Case 1 colours ───────────────────────────────────────────────────────
+    # Case 1 colours
     c1_node_fill = {
         nd: (_COL_MIS if nd in scheduler.mis else _COL_MEASURE)
         for nd in G.nodes
@@ -262,7 +258,7 @@ def show_2d_layout(
         for u, v in all_edges
     }
 
-    # ── Case 2 colours ───────────────────────────────────────────────────────
+    # Case 2 colours
     c2_node_fill = {nd: _COL_IDLE for nd in G.nodes}
     c2_node_ec   = {nd: _COL_BORDER for nd in G.nodes}
     c2_node_lw   = {nd: 1.2 for nd in G.nodes}
@@ -276,7 +272,7 @@ def show_2d_layout(
         for u, v in all_edges
     }
 
-    # ── Figure ───────────────────────────────────────────────────────────────
+    # Figure
     has_case3 = cz_k is not None
     fig_w = 24 if has_case3 else 16
     if has_case3:
@@ -300,7 +296,7 @@ def show_2d_layout(
         hw, show_labels,
     )
 
-    # ── Legends ──────────────────────────────────────────────────────────────
+    # Legends
     # Case 1 node legend
     ax1.legend(
         handles=[
@@ -347,7 +343,7 @@ def show_2d_layout(
         title="CZ Round", title_fontsize=8,
     )
 
-    # ── Case 3 panel (optional) ──────────────────────────────────────────────
+    # Case 3 panel (optional)
     if has_case3:
         edge_batch: dict[tuple, int] = {
             (min(u, v), max(u, v)): b
@@ -393,9 +389,7 @@ def show_2d_layout(
     _save_or_show(fig, save_path, "2D layout", display)
 
 
-# ============================================================================
 # Schedule Heatmap
-# ============================================================================
 
 def _build_heatmap_case1(scheduler: "SubstrateScheduler") -> np.ndarray:
     """Matrix[qubit_row, tock] = 0 (idle) | 1 (Z-neighbour) | 2 (X-measured)."""
@@ -505,7 +499,7 @@ def show_heatmaps(
     """
     Side-by-side schedule heatmaps for Case 1 and Case 2.
 
-    Every cell is one (qubit, tock) pair.  Works cleanly for any graph size —
+    Every cell is one (qubit, tock) pair.  Works cleanly for any graph size -
     at high vertex counts the cell shading communicates the schedule pattern
     even without readable labels.
     """
@@ -565,7 +559,7 @@ def show_heatmaps(
                  f"Case 2 — CZ  ({n_t2} Tock{'s' if n_t2!=1 else ''},"
                  f"  {cz.chromatic_index} rounds)",
                  cmap2, legend2, ax2,
-                 vline_every=2)   # divider every CZ round
+                 vline_every=2)  # divider every CZ round
 
     if has_case3:
         x_lbl3  = [f"T{t+1}" for t in range(n_t3)]
@@ -583,12 +577,10 @@ def show_heatmaps(
     _save_or_show(fig, save_path, "heatmap", display)
 
 
-# ============================================================================
 # Gantt charts  (improved: smart y-ticks, cleaner grid)
-# ============================================================================
 
 def plot_gantt_case1(scheduler: "SubstrateScheduler", ax: plt.Axes) -> None:
-    """Gantt chart for Case 1 — rows sorted by spectral substrate position."""
+    """Gantt chart for Case 1 - rows sorted by spectral substrate position."""
     G            = scheduler.G
     nodes_sorted = sorted(G.nodes, key=lambda nd: scheduler.mapping[nd])
     node_to_row  = {nd: i for i, nd in enumerate(nodes_sorted)}
@@ -639,7 +631,7 @@ def plot_gantt_case1(scheduler: "SubstrateScheduler", ax: plt.Axes) -> None:
 
 
 def plot_gantt_case2(cz: "CZScheduler", ax: plt.Axes) -> None:
-    """Gantt chart for Case 2 — each CZ round = 2 consecutive Tocks."""
+    """Gantt chart for Case 2 - each CZ round = 2 consecutive Tocks."""
     G            = cz.G
     nodes_list   = list(G.nodes)
     node_to_row  = {nd: i for i, nd in enumerate(nodes_list)}
@@ -682,7 +674,7 @@ def plot_gantt_case2(cz: "CZScheduler", ax: plt.Axes) -> None:
 
 
 def plot_gantt_case3(cz_k: "CZSchedulerFixedAncilla", ax: plt.Axes) -> None:
-    """Gantt chart for Case 3 — sub-batches of k CZ gates, 2 Tocks each."""
+    """Gantt chart for Case 3 - sub-batches of k CZ gates, 2 Tocks each."""
     G            = cz_k.G
     nodes_list   = list(G.nodes)
     node_to_row  = {nd: i for i, nd in enumerate(nodes_list)}
@@ -749,9 +741,7 @@ def show_gantt(
     _save_or_show(fig, save_path, "Gantt chart", display)
 
 
-# ============================================================================
-# Comparison dashboard  (bar charts — unchanged logic, cleaner styling)
-# ============================================================================
+# Comparison dashboard  (bar charts: unchanged logic, cleaner styling)
 
 def show_comparison_dashboard(
     report:    "ResourceReport",
@@ -836,11 +826,8 @@ def show_comparison_dashboard(
     _save_or_show(fig, save_path, "dashboard", display)
 
 
-# ============================================================================
 # Shared save/show helper
-# ============================================================================
 # Qubit Occupancy  (per-tock tile strip, restored from original notebook)
-# ============================================================================
 
 def _draw_occupancy_tiles(
     ax:       plt.Axes,
@@ -877,13 +864,13 @@ def _draw_occupancy_tiles(
             ax.text(q + 0.5, row_y + 0.5, f"{prefix}{q}",
                     ha="center", va="center", fontsize=8, color="#bbbbbb")
 
-    # Active tiles — one colour per measurement in this tock
+    # Active tiles: one colour per measurement in this tock
     for bi, b in enumerate(tock):
         col      = palette[bi % len(palette)]
         L, R     = b["L"], b["R"]
         involved = [mapping[b["id"]]] + [mapping[nb] for nb in b["neighbors"]]
 
-        for q in range(L, R + 1):          # ancilla span
+        for q in range(L, R + 1):  # ancilla span
             ax.add_patch(plt.Rectangle(
                 (q, 1.5), 1, 1,
                 facecolor=col, edgecolor="white", linewidth=1.5, alpha=0.88,
@@ -892,7 +879,7 @@ def _draw_occupancy_tiles(
                     ha="center", va="center",
                     fontsize=8, fontweight="bold", color="white")
 
-        for q in involved:                 # data qubits
+        for q in involved:  # data qubits
             ax.add_patch(plt.Rectangle(
                 (q, 0.0), 1, 1,
                 facecolor=col, edgecolor="white", linewidth=1.5, alpha=0.88,
@@ -908,7 +895,7 @@ def show_qubit_occupancy(
     display:   bool = False,
 ) -> None:
     """
-    Per-tock qubit occupancy figure (Case 1 — MPP).
+    Per-tock qubit occupancy figure (Case 1 - MPP).
 
     Each row in the figure is one Tock.  Left panel = graph view with
     X/Z roles highlighted.  Right panel = the tile strip (ancilla row on top,
@@ -933,14 +920,14 @@ def show_qubit_occupancy(
                  fontsize=14, fontweight="bold", y=1.01)
 
     if n_tocks == 1:
-        axes = [axes]   # normalise to list of rows
+        axes = [axes]  # normalise to list of rows
 
     pos = scheduler._get_pos()
 
     for t, (row, tock) in enumerate(zip(axes, scheduler.schedule)):
         ax_graph, ax_tiles = row
 
-        # ── Graph view ───────────────────────────────────────────────────────
+        # Graph view
         measured  = {b["id"] for b in tock}
         neighbors = {nb for b in tock for nb in b["neighbors"]}
 
@@ -1002,7 +989,7 @@ def show_qubit_occupancy(
         ax_graph.axis("off")
         ax_graph.margins(0.18)
 
-        # ── Tile strip ───────────────────────────────────────────────────────
+        # Tile strip
         _draw_occupancy_tiles(ax_tiles, tock, scheduler.mapping,
                               n_q, t, _PALETTE)
 
@@ -1021,10 +1008,10 @@ def show_qubit_occupancy_case3(
     Each row is one Tock.  Left panel = graph view.  Right panel = tile strip.
 
     Tile strip layout (n_q columns, one per data qubit):
-      Top row    — ancilla ELU: drawn ONLY above the data qubit it is docked
+      Top row    - ancilla ELU: drawn ONLY above the data qubit it is docked
                    with this tock.  Idle slots show a faint dashed outline.
-      Bottom row — data qubits: always present; highlighted when active.
-      Connector  — a short vertical line links each active (ancilla, qubit) pair
+      Bottom row - data qubits: always present; highlighted when active.
+      Connector  - a short vertical line links each active (ancilla, qubit) pair
                    so it is visually clear which ancilla is touching which qubit.
 
     This makes the ancilla "repositioning" between Step 1 and Step 2 directly
@@ -1065,7 +1052,7 @@ def show_qubit_occupancy_case3(
     for t in range(n_tocks):
         ax_graph, ax_tiles = axes[t]
         batch_idx = t // 2
-        step      = t % 2    # 0 = Step 1  (measure Z_u⊗Z_anc)
+        step      = t % 2  # 0 = Step 1  (measure Z_u⊗Z_anc)
                               # 1 = Step 2  (measure Z_v⊗Z_anc)
         batch     = cz_k.batches[batch_idx]
         col       = palette[batch_idx % len(palette)]
@@ -1075,7 +1062,7 @@ def show_qubit_occupancy_case3(
         active_now   = active_step1 if step == 0 else active_step2
         active_other = active_step2 if step == 0 else active_step1
 
-        # ── Graph view ───────────────────────────────────────────────────────
+        # Graph view
         node_colors = [
             "#FFCC80" if nd in active_now   else
             "#FFECB3" if nd in active_other else
@@ -1128,8 +1115,8 @@ def show_qubit_occupancy_case3(
         ax_graph.axis("off")
         ax_graph.margins(0.18)
 
-        # ── Tile strip ───────────────────────────────────────────────────────
-        # n_q columns — one per data qubit.
+        # Tile strip
+        # n_q columns: one per data qubit.
         # Top row  (y=1.5..2.5): ancilla ELU docked HERE if active this tock.
         # Bottom row (y=0..1)  : data qubit tile (always present).
         # Active pair shares a color; a connector line links them.
@@ -1162,7 +1149,7 @@ def show_qubit_occupancy_case3(
             if nd in active_map:
                 ai, tile_col = active_map[nd]
 
-                # Data qubit tile — active (colored)
+                # Data qubit tile: active (colored)
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 0.0), 1, 1,
                     facecolor=tile_col, edgecolor="white",
@@ -1172,7 +1159,7 @@ def show_qubit_occupancy_case3(
                               ha="center", va="center",
                               fontsize=8, fontweight="bold", color="white", zorder=3)
 
-                # Ancilla tile — docked directly above (same column, same color)
+                # Ancilla tile: docked directly above (same column, same color)
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 1.5), 1, 1,
                     facecolor=tile_col, edgecolor="white",
@@ -1188,7 +1175,7 @@ def show_qubit_occupancy_case3(
                               solid_capstyle="round", zorder=1)
 
             else:
-                # Data qubit tile — idle (grey)
+                # Data qubit tile: idle (grey)
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 0.0), 1, 1,
                     facecolor="#fafafa", edgecolor="#dddddd", linewidth=0.8,
@@ -1196,7 +1183,7 @@ def show_qubit_occupancy_case3(
                 ax_tiles.text(qi + 0.5, 0.5, f"Q{nd}",
                               ha="center", va="center", fontsize=7, color="#bbbbbb")
 
-                # Ancilla slot above — faint dashed outline (no ancilla here)
+                # Ancilla slot above: faint dashed outline (no ancilla here)
                 ax_tiles.add_patch(plt.Rectangle(
                     (qi, 1.5), 1, 1,
                     facecolor="#f8f8f8", edgecolor="#e0e0e0",
@@ -1206,8 +1193,6 @@ def show_qubit_occupancy_case3(
     plt.tight_layout()
     _save_or_show(fig, save_path, "Case 3 qubit occupancy", display)
 
-
-# ============================================================================
 
 def _save_or_show(
     fig:       plt.Figure,

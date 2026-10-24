@@ -15,9 +15,9 @@ ports (data + ancilla combined).
 
 Parameters
 ----------
-  k          — ports per switch  (simultaneously connected ELUs per switch)
-  n_switches — number of parallel switches  (default 1)
-  n_elus     — total ELUs in the system  (must be >= |V| of the logical graph)
+  k          - ports per switch  (simultaneously connected ELUs per switch)
+  n_switches - number of parallel switches  (default 1)
+  n_elus     - total ELUs in the system  (must be >= |V| of the logical graph)
 
 Cost model
 ----------
@@ -57,10 +57,10 @@ class KPortSwitch:
         if self.n_switches < 1:
             raise ValueError("Must have at least 1 switch.")
         if self.k > self.n_elus:
-            # Can't connect more ELUs than exist — clamp
+            # Can't connect more ELUs than exist: clamp
             self.k = self.n_elus
 
-    # ── Queries ───────────────────────────────────────────────────────────
+    # Queries
 
     def max_cz_per_step(self) -> int:
         """Max CZ gates per sub-batch across ALL switches.
@@ -91,7 +91,7 @@ class KPortSwitch:
         """True when a single switch can connect all ELUs (= Cases 1-3)."""
         return self.k >= self.n_elus
 
-    # ── Pretty print ─────────────────────────────────────────────────────
+    # Pretty print
 
     def __repr__(self) -> str:
         if self.n_switches == 1:

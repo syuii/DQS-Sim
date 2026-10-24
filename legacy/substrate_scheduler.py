@@ -4,9 +4,9 @@ substrate_scheduler.py
 Substrate scheduler for graph state generation in quantum error correction.
 
 Three-phase algorithm:
-  Phase 1 — Maximum Independent Set (MIS) reduction
-  Phase 2 — Spectral ordering of qubits onto the physical substrate
-  Phase 3 — Greedy interval scheduling to minimise Tocks
+  Phase 1 - Maximum Independent Set (MIS) reduction
+  Phase 2 - Spectral ordering of qubits onto the physical substrate
+  Phase 3 - Greedy interval scheduling to minimise Tocks
 
 Reference layout: 4 · |V| tiles, one ancilla row and one data row.
 
@@ -30,16 +30,14 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import networkx as nx
 
-# ---------------------------------------------------------------------------
-# Visual constants — edit here to restyle all plots at once
-# ---------------------------------------------------------------------------
+# Visual constants: edit here to restyle all plots at once
 
 _STYLE = {
     # node colours
-    "node_mis":     "#81c784",   # green  — MIS (free)
-    "node_measure": "#e57373",   # red    — to be measured
-    "node_neighbor":"#ffd54f",   # yellow — Z-neighbour (tock plots)
-    "node_idle":    "#f0f0f0",   # grey   — uninvolved
+    "node_mis":     "#81c784",  # green : MIS (free)
+    "node_measure": "#e57373",  # red   : to be measured
+    "node_neighbor":"#ffd54f",  # yellow: Z-neighbour (tock plots)
+    "node_idle":    "#f0f0f0",  # grey  : uninvolved
 
     # edges
     "edge_active":  "#e57373",
@@ -63,17 +61,13 @@ _STYLE = {
 _LAYOUT_SEED = 42
 
 
-# ---------------------------------------------------------------------------
 # Type aliases
-# ---------------------------------------------------------------------------
 
-Block = dict[str, Any]   # {"id", "L", "R", "neighbors"}
+Block = dict[str, Any]  # {"id", "L", "R", "neighbors"}
 Tock  = list[Block]
 
 
-# ---------------------------------------------------------------------------
 # SubstrateScheduler
-# ---------------------------------------------------------------------------
 
 class SubstrateScheduler:
     """
@@ -99,11 +93,9 @@ class SubstrateScheduler:
         self.to_measure: list    = []
         self.mapping:  dict      = {}
         self.schedule: list[Tock] = []
-        self._pos:     dict      = {}   # fixed spring-layout positions
+        self._pos:     dict      = {}  # fixed spring-layout positions
 
-    # ------------------------------------------------------------------
-    # Phase 1 — MIS
-    # ------------------------------------------------------------------
+    # Phase 1: MIS
 
     def _is_independent_set(self, nodes: tuple) -> bool:
         """Return True iff no two nodes in *nodes* share an edge."""
@@ -141,9 +133,7 @@ class SubstrateScheduler:
         self.to_measure = [v for v in self.G.nodes if v not in self.mis]
         return self.mis
 
-    # ------------------------------------------------------------------
-    # Phase 2 — Spectral ordering
-    # ------------------------------------------------------------------
+    # Phase 2: Spectral ordering
 
     def phase_2_mapping(self) -> dict:
         """
@@ -154,9 +144,7 @@ class SubstrateScheduler:
         self.mapping = {node: i for i, node in enumerate(ordering)}
         return self.mapping
 
-    # ------------------------------------------------------------------
-    # Phase 3 — Greedy interval scheduling
-    # ------------------------------------------------------------------
+    # Phase 3: Greedy interval scheduling
 
     def phase_3_scheduling(self) -> list[Tock]:
         """
@@ -170,7 +158,7 @@ class SubstrateScheduler:
             L, R        = min(positions), max(positions)
             blocks.append({"id": v, "L": L, "R": R, "neighbors": neighbors})
 
-        # Sort by (R, L) — standard earliest-deadline-first variant
+        # Sort by (R, L): standard earliest-deadline-first variant
         blocks.sort(key=lambda b: (b["R"], b["L"]))
 
         schedule: list[Tock] = []
@@ -191,9 +179,7 @@ class SubstrateScheduler:
 
         return schedule
 
-    # ------------------------------------------------------------------
     # Generator graph & chromatic verification
-    # ------------------------------------------------------------------
 
     def build_generator_graph(self) -> nx.Graph:
         """
@@ -224,26 +210,26 @@ class SubstrateScheduler:
         Report bounds on χ(S') and compare against the scheduler's tock count.
 
         S' is the generator conflict graph built over the *measured* generators
-        (to_measure nodes only — MIS nodes are initialised in |+⟩ and removed).
+        (to_measure nodes only - MIS nodes are initialised in |+⟩ and removed).
         Per the notes, χ(S') is the theoretical minimum number of tocks.
 
         Because computing the exact chromatic number is NP-hard we report two
         bounds that bracket χ(S'):
 
-          Lower bound — clique number ω(S') ≤ χ(S')
+          Lower bound - clique number ω(S') ≤ χ(S')
               A clique of size k means k mutually-conflicting generators, so
               they must all go in different tocks.
 
-          Upper bound — DSATUR greedy colouring χ_greedy ≥ χ(S')
+          Upper bound - DSATUR greedy colouring χ_greedy ≥ χ(S')
               Any valid colouring is a valid schedule, so the greedy result
               is an achievable (but not necessarily minimal) tock count.
 
         Pass/fail criteria
         ------------------
-          IMPOSSIBLE  tocks < ω          — beats the proven lower bound (bug)
-          OPTIMAL     tocks == ω          — matches the proven lower bound
-          FEASIBLE    ω < tocks ≤ χ_greedy — within the provable range
-          SUBOPTIMAL  tocks > χ_greedy    — worse than plain graph colouring
+          IMPOSSIBLE  tocks < ω          - beats the proven lower bound (bug)
+          OPTIMAL     tocks == ω          - matches the proven lower bound
+          FEASIBLE    ω < tocks ≤ χ_greedy - within the provable range
+          SUBOPTIMAL  tocks > χ_greedy    - worse than plain graph colouring
 
         Returns
         -------
@@ -258,11 +244,11 @@ class SubstrateScheduler:
             print("\n  No generators to measure — trivially 0 Tocks.\n")
             return gen_graph, {}, 0
 
-        # ── Upper bound: DSATUR greedy colouring ─────────────────────────────
+        # Upper bound: DSATUR greedy colouring
         coloring   = nx.coloring.greedy_color(gen_graph, strategy="DSATUR")
         chi_greedy = max(coloring.values()) + 1
 
-        # ── Lower bound: clique number ω(S') ─────────────────────────────────
+        # Lower bound: clique number ω(S')
         # nx.graph_clique_number is exact but slow; use max_clique for small
         # graphs and the Lovász theta / degree bound for large ones.
         n_gen = len(gen_graph.nodes)
@@ -289,9 +275,7 @@ class SubstrateScheduler:
 
         return gen_graph, coloring, chi_greedy
 
-    # ------------------------------------------------------------------
     # Shared layout helper
-    # ------------------------------------------------------------------
 
     def _get_pos(self) -> dict:
         """Return (and cache) a fixed spring-layout for G."""
@@ -299,9 +283,7 @@ class SubstrateScheduler:
             self._pos = nx.spring_layout(self.G, seed=_LAYOUT_SEED, k=2)
         return self._pos
 
-    # ------------------------------------------------------------------
     # Visualisation helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _apply_common_ax(ax: plt.Axes, title: str) -> None:
@@ -364,9 +346,7 @@ class SubstrateScheduler:
             ax=ax,
         )
 
-    # ------------------------------------------------------------------
     # Individual plot methods
-    # ------------------------------------------------------------------
 
     def plot_input_graph(self, ax: plt.Axes) -> None:
         """Render the bare input graph."""
@@ -437,7 +417,7 @@ class SubstrateScheduler:
         tock   = self.schedule[tock_idx]
         n_q    = len(self.G.nodes)
 
-        # ---- graph view ----
+        # graph view
         measured  = {b["id"] for b in tock}
         neighbors = {nb for b in tock for nb in b["neighbors"]}
         colors    = [
@@ -473,7 +453,7 @@ class SubstrateScheduler:
         )
         self._apply_common_ax(ax_graph, f"Tock {tock_idx + 1} — Graph View")
 
-        # ---- tile view ----
+        # tile view
         ax_tiles.set_xlim(-0.6, n_q)
         ax_tiles.set_ylim(-0.3, 2.8)
         ax_tiles.set_aspect("equal")
@@ -570,9 +550,7 @@ class SubstrateScheduler:
         ax.legend(handles=handles, loc="upper right", fontsize=9, frameon=False)
         self._apply_common_ax(ax, "Generator Graph — Chromatic Colouring")
 
-    # ------------------------------------------------------------------
     # Composite figure builders
-    # ------------------------------------------------------------------
 
     def show_overview(self) -> None:
         """
@@ -634,9 +612,7 @@ class SubstrateScheduler:
         plt.show()
         plt.close()
 
-    # ------------------------------------------------------------------
     # Public entry point
-    # ------------------------------------------------------------------
 
     def run(self, visualize: bool = True, verify_chromatic: bool = True) -> None:
         """
@@ -687,25 +663,18 @@ class SubstrateScheduler:
                 self.show_generator_graph(gen_graph, coloring)
 
 
-# ===========================================================================
-# CZScheduler — Case 2: Graph-state generation via CZ gates
-# ===========================================================================
-#
+# CZScheduler - Case 2: Graph-state generation via CZ gates
 # Theory recap (from the GoSC notes)
-# ------------------------------------
 # A CZ gate between qubits u and v (both initialised in |+⟩) requires:
-#   - 1 ancilla ELU per CZ
-#   - 2 sequential MPP steps:
-#       Step 1:  measure  Z_u ⊗ Z_ancilla   (1 Tock)
-#       Step 2:  measure  Z_v ⊗ Z_ancilla   (1 Tock)
-#
+# - 1 ancilla ELU per CZ
+# - 2 sequential MPP steps:
+# Step 1:  measure  Z_u ⊗ Z_ancilla   (1 Tock)
+# Step 2:  measure  Z_v ⊗ Z_ancilla   (1 Tock)
 # Two CZ gates can run *in parallel* iff they share no qubit.
 # Packing edges into parallel groups = edge colouring of G.
 # By Vizing's theorem:  χ'(G) ∈ {Δ(G),  Δ(G)+1}
-#
 # Each colour class is one "CZ round".  Each round costs 2 Tocks.
 # → Total Tocks = 2 × χ'(G)
-#
 # Space: each CZ needs 1 ancilla ELU, but ancillae are reused across rounds.
 # Peak ancilla demand = max edges in any colour class.
 # Data ELUs = |V|.  Layout tiles = 4·|V| (same 2-row substrate).
@@ -713,7 +682,7 @@ class SubstrateScheduler:
 class CZScheduler:
     """
     Schedule CZ-gate-based graph-state generation on a nearest-neighbour
-    substrate (GoSC Case 2 — unlimited ancillae, edge-colouring approach).
+    substrate (GoSC Case 2 - unlimited ancillae, edge-colouring approach).
 
     Parameters
     ----------
@@ -729,19 +698,17 @@ class CZScheduler:
             print("Warning: graph is not connected.")
 
         # Populated by run()
-        self.edge_coloring: dict[tuple, int] = {}   # edge → colour index
+        self.edge_coloring: dict[tuple, int] = {}  # edge → colour index
         self.cz_rounds:     list[list[tuple]] = []  # colour_idx → [edge list]
         self.chromatic_index: int = 0
         self.max_degree:      int = 0
         self._pos: dict = {}
 
-    # ------------------------------------------------------------------
     # Edge colouring
-    # ------------------------------------------------------------------
 
     def _greedy_edge_coloring(self) -> dict[tuple, int]:
         """
-        Greedy edge colouring — assigns each edge a colour such that no
+        Greedy edge colouring - assigns each edge a colour such that no
         two edges incident on the same vertex share a colour.
 
         Guarantees at most Δ(G)+1 colours (Vizing upper bound).
@@ -791,9 +758,7 @@ class CZScheduler:
         self.cz_rounds = rounds
         return self.cz_rounds
 
-    # ------------------------------------------------------------------
     # Verification helpers
-    # ------------------------------------------------------------------
 
     def verify_vizing(self) -> bool:
         """Check that χ'(G) ∈ {Δ(G), Δ(G)+1} as Vizing's theorem requires."""
@@ -811,9 +776,7 @@ class CZScheduler:
         print("=" * 52 + "\n")
         return passed
 
-    # ------------------------------------------------------------------
     # Console summary
-    # ------------------------------------------------------------------
 
     def print_summary(self) -> None:
         """Print a human-readable schedule summary."""
@@ -836,9 +799,7 @@ class CZScheduler:
                       f"Tock {2*i+1}: Z{u}⊗Z_anc  |  "
                       f"Tock {2*i+2}: Z{v}⊗Z_anc")
 
-    # ------------------------------------------------------------------
     # Visualisation
-    # ------------------------------------------------------------------
 
     def _get_pos(self) -> dict:
         if not self._pos:
@@ -908,7 +869,7 @@ class CZScheduler:
         color   = palette[round_idx % len(palette)]
         n_q     = len(self.G.nodes)
 
-        # ---- graph view ----
+        # graph view
         active_nodes: set = set()
         for u, v in edges:
             active_nodes.add(u); active_nodes.add(v)
@@ -941,7 +902,7 @@ class CZScheduler:
                            fontsize=_STYLE["title_size"], pad=10)
         ax_graph.axis("off"); ax_graph.margins(0.18)
 
-        # ---- tile view: two sub-columns per CZ (Step 1 | Step 2) ----
+        # tile view: two sub-columns per CZ (Step 1 | Step 2)
         # We show a compact flat tile strip; each CZ pair gets 2 sub-slots.
         ax_tiles.set_xlim(-0.6, max(n_q * 2, 4))
         ax_tiles.set_ylim(-0.3, 3.5)
@@ -1046,9 +1007,7 @@ class CZScheduler:
         plt.show()
         plt.close()
 
-    # ------------------------------------------------------------------
     # Public entry point
-    # ------------------------------------------------------------------
 
     def run(self, visualize: bool = True, verify_vizing: bool = True) -> None:
         """
@@ -1070,35 +1029,26 @@ class CZScheduler:
             self.show_all_rounds()
 
 
-# ===========================================================================
-# CZSchedulerFixedAncilla — Case 3: CZ gates + k fixed ancilla ELUs
-# ===========================================================================
-#
+# CZSchedulerFixedAncilla - Case 3: CZ gates + k fixed ancilla ELUs
 # Theory
-# ------
 # Same greedy edge-colouring as CZScheduler (Case 2), but the ancilla pool
 # is capped at k ELUs.  When a colour class Cᵢ has more than k edges, it is
 # split into consecutive sub-batches of ≤ k edges.  Each sub-batch takes
 # exactly 2 Tocks:
-#
-#   Tock 2b−1  (Step 1): for every CZ(u,v) in the batch, measure Z_u ⊗ Z_anc
-#   Tock 2b    (Step 2): for every CZ(u,v) in the batch, measure Z_v ⊗ Z_anc
-#
+# Tock 2b−1  (Step 1): for every CZ(u,v) in the batch, measure Z_u ⊗ Z_anc
+# Tock 2b    (Step 2): for every CZ(u,v) in the batch, measure Z_v ⊗ Z_anc
 # Sub-batches from different colour classes CANNOT be pipelined in general
 # because adjacent colour classes can share vertices, causing qubit conflicts.
 # Sub-batches are therefore executed in strict sequence.
-#
-#   Total Tocks  =  2 × Σᵢ ⌈|Cᵢ| / k⌉
-#
+# Total Tocks  =  2 × Σᵢ ⌈|Cᵢ| / k⌉
 # Lower bound on 2-Tock windows: T_lb = Σᵢ ⌈|Cᵢ| / k⌉  (achieved exactly)
-#
 # Special cases
-#   k ≥ max_i |Cᵢ|  →  same as Case 2 (no extra splitting)
-#   k = 1            →  Total Tocks = 2·|E|  (all CZs sequential)
+# k ≥ max_i |Cᵢ|  →  same as Case 2 (no extra splitting)
+# k = 1            →  Total Tocks = 2·|E|  (all CZs sequential)
 
 class CZSchedulerFixedAncilla(CZScheduler):
     """
-    Case 3 — CZ-gate graph-state generation with k fixed ancilla ELUs
+    Case 3 - CZ-gate graph-state generation with k fixed ancilla ELUs
     and all-to-all connectivity.
 
     Inherits greedy edge-colouring from CZScheduler.  Adds ancilla-pool
@@ -1108,7 +1058,7 @@ class CZSchedulerFixedAncilla(CZScheduler):
     Parameters
     ----------
     graph : nx.Graph
-    k     : int — ancilla pool size (≥ 1)
+    k     : int - ancilla pool size (≥ 1)
     """
 
     def __init__(self, graph: nx.Graph, k: int) -> None:
@@ -1116,11 +1066,9 @@ class CZSchedulerFixedAncilla(CZScheduler):
             raise ValueError("Ancilla pool size k must be at least 1.")
         super().__init__(graph)
         self.k: int = k
-        self.batches: list[list[tuple]] = []   # all sub-batches in order (each = 2 Tocks)
+        self.batches: list[list[tuple]] = []  # all sub-batches in order (each = 2 Tocks)
 
-    # ------------------------------------------------------------------
     # Batch scheduling
-    # ------------------------------------------------------------------
 
     def schedule_batches(self) -> list[list[tuple]]:
         """
@@ -1140,9 +1088,7 @@ class CZSchedulerFixedAncilla(CZScheduler):
         self.batches = all_batches
         return self.batches
 
-    # ------------------------------------------------------------------
     # Resource metrics
-    # ------------------------------------------------------------------
 
     def n_tocks(self) -> int:
         """Total Tocks = 2 × number of sub-batches."""
@@ -1151,13 +1097,11 @@ class CZSchedulerFixedAncilla(CZScheduler):
     def n_sub_batches(self) -> int:
         """
         Number of serial 2-Tock windows needed.
-        Equals Σᵢ ⌈|Cᵢ|/k⌉ — this is also the lower bound in 2-Tock units.
+        Equals Σᵢ ⌈|Cᵢ|/k⌉ - this is also the lower bound in 2-Tock units.
         """
         return sum(math.ceil(len(r) / self.k) for r in self.cz_rounds)
 
-    # ------------------------------------------------------------------
     # Console summary (overrides parent)
-    # ------------------------------------------------------------------
 
     def print_summary(self) -> None:
         n_b    = len(self.batches)
@@ -1201,9 +1145,7 @@ class CZSchedulerFixedAncilla(CZScheduler):
                           f"Tock {t2}: Z_{v}⊗Z_anc")
                 batch_num += 1
 
-    # ------------------------------------------------------------------
     # Public entry point (overrides parent)
-    # ------------------------------------------------------------------
 
     def run(
         self,
@@ -1214,12 +1156,12 @@ class CZSchedulerFixedAncilla(CZScheduler):
         Run Case 3: edge-colour G, split colour classes into k-ancilla
         sub-batches, print summary.
         """
-        self.schedule_cz_rounds()   # edge colouring → self.cz_rounds
-        self.schedule_batches()     # sub-batch split  → self.batches
+        self.schedule_cz_rounds()  # edge colouring → self.cz_rounds
+        self.schedule_batches()  # sub-batch split  → self.batches
         self.print_summary()
 
         if verify_vizing:
-            self.verify_vizing()    # inherited — Vizing's theorem check
+            self.verify_vizing()  # inherited: Vizing's theorem check
 
         if visualize:
-            self.show_overview()    # inherited — edge-colouring overview
+            self.show_overview()  # inherited: edge-colouring overview

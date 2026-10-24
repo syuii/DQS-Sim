@@ -1,5 +1,5 @@
 """
-main.py — Graph State Generation Simulator (GoSC / Lattice Surgery)
+main.py - Graph State Generation Simulator (GoSC / Lattice Surgery)
 
 Usage
 -----
@@ -42,7 +42,6 @@ from dqs_sim.visualizer import (show_comparison_dashboard, show_gantt, show_heat
 
 
 # Graph builders
-# ---------------------------------------------------------------------------
 
 GRAPH_BUILDERS = {
     "path":     lambda n, _: nx.path_graph(n),
@@ -97,9 +96,7 @@ def build_graph(graph_type: str, n: int, p: float,
     return G
 
 
-# ---------------------------------------------------------------------------
 # CLI
-# ---------------------------------------------------------------------------
 
 CASE_CHOICES = ["1", "2", "3", "4", "5", "both", "all", "limited"]
 
@@ -118,7 +115,7 @@ def make_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    # ── Graph ─────────────────────────────────────────────────────────────────
+    # Graph
     g = p.add_argument_group("Graph")
     g.add_argument("--graph", choices=list(GRAPH_BUILDERS), default="star",
                    metavar="TYPE", help=f"Graph topology ({GRAPH_HELP})")
@@ -131,7 +128,7 @@ def make_parser() -> argparse.ArgumentParser:
                         "(edge list, one 'u v' per line, or node-link JSON). "
                         "Overrides --graph.")
 
-    # ── Simulation ────────────────────────────────────────────────────────────
+    # Simulation
     s = p.add_argument_group("Simulation")
     s.add_argument("--case", choices=CASE_CHOICES,
                    default="both",
@@ -151,7 +148,7 @@ def make_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-verify", action="store_true",
                    help="Skip chromatic / Vizing verification (faster for large graphs)")
 
-    # ── k-port switch (Cases 4 & 5) ─────────────────────────────────────────
+    # k-port switch (Cases 4 & 5)
     t = p.add_argument_group("k-port switch (Cases 4 & 5)")
     t.add_argument("--switch-k", type=int, default=None, metavar="K",
                    help="Ports per switch (simultaneously connected ELUs). "
@@ -162,12 +159,12 @@ def make_parser() -> argparse.ArgumentParser:
                         "Each switch independently connects k ELUs per Tock. "
                         "ELUs on the same switch can interact; different switches cannot.")
 
-    # ── Cost estimation ───────────────────────────────────────────────────────
+    # Cost estimation
     c = p.add_argument_group("Cost estimation")
     c.add_argument("--code-distance", type=int, default=7, metavar="D",
                    help="Surface code distance d  →  2d²-1 physical qubits per ELU")
 
-    # ── Output ────────────────────────────────────────────────────────────────
+    # Output
     o = p.add_argument_group("Output")
     o.add_argument("--visualize", action="store_true",
                    help="Show per-tock / per-round matplotlib figures (best for small graphs)")
@@ -215,9 +212,7 @@ def make_parser() -> argparse.ArgumentParser:
     return p
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 def _needs_limited(case: str) -> bool:
     return case in ("4", "5", "limited", "all")
@@ -236,16 +231,14 @@ def _build_switch(args, G: nx.Graph) -> KPortSwitch:
               f"(min ports={max_support}+1anc={min_k}).")
     n_sw = args.switches
     # n_elus = data ELUs + generous ancilla pool
-    n_elus = n * 2   # data + up to |V| ancillas
+    n_elus = n * 2  # data + up to |V| ancillas
     return KPortSwitch(k=k, n_elus=n_elus, n_switches=n_sw)
 
 
-# ---------------------------------------------------------------------------
 # Entry point
-# ---------------------------------------------------------------------------
 
 def main() -> None:
-    # Output uses symbols like — and χ; avoid UnicodeEncodeError on non-UTF-8
+    # Output uses symbols like: and χ; avoid UnicodeEncodeError on non-UTF-8
     # consoles (e.g. Windows with a Japanese locale, cp932).
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -283,7 +276,7 @@ def main() -> None:
     mpp_lim:   MPPSchedulerLimited       | None = None
     cz_lim:    CZSchedulerLimited        | None = None
 
-    # ── Case 1 ───────────────────────────────────────────────────────────────
+    # Case 1
     if args.case in ("1", "both", "all"):
         print("\n" + "#" * 52)
         print("#  CASE 1 — Stabilizer MPP Scheduler")
@@ -291,7 +284,7 @@ def main() -> None:
         scheduler = MPPConflictScheduler(G, mis_mode=args.mis)
         scheduler.run(visualize=args.visualize, verify_chromatic=verify)
 
-    # ── Case 2 ───────────────────────────────────────────────────────────────
+    # Case 2
     if args.case in ("2", "both", "all"):
         print("\n" + "#" * 52)
         print("#  CASE 2 — CZ Gate Scheduler  (unlimited ancillas)")
@@ -299,7 +292,7 @@ def main() -> None:
         cz = CZScheduler(G, coloring_mode=args.colouring)
         cz.run(visualize=args.visualize, verify_vizing=verify)
 
-    # ── Case 3 ───────────────────────────────────────────────────────────
+    # Case 3
     if args.case in ("3", "all"):
         k = args.ancillas
         if k is None:
@@ -317,13 +310,13 @@ def main() -> None:
         cz_k = CZSchedulerFixedAncilla(G, k=k, coloring_mode=args.colouring)
         cz_k.run(visualize=args.visualize, verify_vizing=verify)
 
-    # ── Cases 4 & 5: build k-port switch ─────────────────────────────────────
+    # Cases 4 & 5: build k-port switch
     switch = None
     if _needs_limited(args.case):
         switch = _build_switch(args, G)
         print(f"\n  Switch: {switch}")
 
-    # ── Case 4 ───────────────────────────────────────────────────────────
+    # Case 4
     if args.case in ("4", "limited", "all"):
         max_support = 1 + max((d for _, d in G.degree()), default=0)
         min_k = max_support + 1  # data + 1 ancilla
@@ -338,7 +331,7 @@ def main() -> None:
             mpp_lim = MPPSchedulerLimited(G, switch, mis_mode=args.mis)
             mpp_lim.run(visualize=args.visualize)
 
-    # ── Case 5 ───────────────────────────────────────────────────────────
+    # Case 5
     if args.case in ("5", "limited", "all"):
         print("\n" + "#" * 60)
         print("#  CASE 5 — CZ Gates + k-Port Switch")
@@ -346,7 +339,7 @@ def main() -> None:
         cz_lim = CZSchedulerLimited(G, switch, coloring_mode=args.colouring)
         cz_lim.run(visualize=args.visualize, verify_vizing=verify)
 
-    # ── Resource report ──────────────────────────────────────────────────────
+    # Resource report
     if scheduler is not None and cz is not None:
         report = compute_report(
             scheduler,
@@ -366,7 +359,7 @@ def main() -> None:
         if args.export:
             report.export_json(args.export)
 
-        show = args.show   # True → display interactively even when saving
+        show = args.show  # True → display interactively even when saving
 
         if args.show or args.gantt or args.save_gantt:
             show_gantt(scheduler, cz, cz_k=cz_k,
@@ -402,7 +395,7 @@ def main() -> None:
             "(use --case both or --case all)."
         )
 
-    # ── k-port switch visualizations (Cases 4 & 5) ──────────────────────────
+    # k-port switch visualizations (Cases 4 & 5)
     has_limited = mpp_lim is not None or cz_lim is not None
     if has_limited:
         show = getattr(args, 'show', False)

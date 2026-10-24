@@ -1,7 +1,7 @@
 """
-thesis_figures.py
-=================
-Purpose-built, page-native figures for the thesis Results chapter, drawn with
+figures.py
+==========
+Purpose-built, page-native result figures, drawn with
 one shared visual language so they read as a set:
 
   fig_c6_substrate.pdf   Case-1 substrate occupancy for C6: data + ancilla
@@ -12,7 +12,7 @@ one shared visual language so they read as a set:
                          parallel, one per switch.
   fig_switch_count.pdf   Measured T5 versus switch count S at fixed k=4.
 
-Usage:  python examples/thesis_figures.py OUTPUT_DIR
+Usage:  python examples/figures.py OUTPUT_DIR
 """
 
 from __future__ import annotations
@@ -49,14 +49,14 @@ mpl.rcParams.update({
 _W = 6.3
 
 # Shared semantic colours (identical to the schedule heatmaps)
-C_MEAS   = "#285A96"   # X-measured        (dark navy, white text)
-C_NBR    = "#B8CDE4"   # Z-neighbour       (light navy, black text)
-C_IDLE   = "#F2F3F5"   # idle
+C_MEAS   = "#285A96"  # X-measured        (dark navy, white text)
+C_NBR    = "#B8CDE4"  # Z-neighbour       (light navy, black text)
+C_IDLE   = "#F2F3F5"  # idle
 C_IDLE_E = "#D8DBE0"
-C_ANC    = "#8B95A5"   # ancilla patch / ancilla QPU (slate)
+C_ANC    = "#8B95A5"  # ancilla patch / ancilla QPU (slate)
 C_SLATE  = "#5A6473"
-C_SWFILL = "#EDF1F6"   # switch body fill
-CASE2    = "#C1853C"   # ochre (Case-2 floors)
+C_SWFILL = "#EDF1F6"  # switch body fill
+CASE2    = "#C1853C"  # ochre (Case-2 floors)
 CASE1    = "#285A96"
 
 
@@ -75,9 +75,7 @@ def qpu_box(ax, x, y, w, h, fill, edge, label, tcol, fs=8, lw=1.1, hatch=None):
                 fontsize=fs, fontweight="bold", color=tcol, zorder=4)
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# Figure A — C6 Case-1 substrate occupancy
-# ════════════════════════════════════════════════════════════════════════════
+# Figure A: C6 Case-1 substrate occupancy
 
 def fig_c6_substrate(path: str) -> None:
     s = SubstrateScheduler(nx.cycle_graph(6))
@@ -90,7 +88,7 @@ def fig_c6_substrate(path: str) -> None:
                              facecolor="white")
 
     for t, (ax, tock) in enumerate(zip(axes, s.schedule)):
-        b = tock[0]                                   # one measurement per Tock
+        b = tock[0]  # one measurement per Tock
         meas = s.mapping[b["id"]]
         nbrs = {s.mapping[v] for v in b["neighbors"]}
         L, R = b["L"], b["R"]
@@ -157,9 +155,7 @@ def fig_c6_substrate(path: str) -> None:
            for tock in s.schedule])
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# Figure B — C8 Case-4, one Tock on two switches
-# ════════════════════════════════════════════════════════════════════════════
+# Figure B: C8 Case-4, one Tock on two switches
 
 def fig_c8_switches(path: str) -> None:
     G = nx.cycle_graph(8)
@@ -173,10 +169,10 @@ def fig_c8_switches(path: str) -> None:
     ax.axis("off")
 
     n = 8
-    dx, dw = 2.0, 1.3                       # data spacing / width
+    dx, dw = 2.0, 1.3  # data spacing / width
     data_y = 5.0
 
-    roles = {}                              # vertex -> ('X'|'Z', switch idx)
+    roles = {}  # vertex -> ('X'|'Z', switch idx)
     for si, gens in enumerate(g0.switch_gens):
         for gen in gens:
             roles[gen["id"]] = ("X", si)
@@ -245,9 +241,7 @@ def fig_c8_switches(path: str) -> None:
     plt.close(fig)
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# Figure C — T5 versus switch count
-# ════════════════════════════════════════════════════════════════════════════
+# Figure C: T5 versus switch count
 
 def fig_switch_count(path: str) -> None:
     from matplotlib.ticker import MaxNLocator
@@ -279,9 +273,7 @@ def fig_switch_count(path: str) -> None:
     plt.close(fig)
 
 
-# ════════════════════════════════════════════════════════════════════════════
 # Single-panel schedule heatmaps and port charts (one PDF per case)
-# ════════════════════════════════════════════════════════════════════════════
 
 import numpy as np
 from matplotlib.colors import ListedColormap

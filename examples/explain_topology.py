@@ -26,12 +26,12 @@ import matplotlib.patches as mpatches
 import numpy as np
 
 
-# ── Colours ──────────────────────────────────────────────────────────────────
+# Colours
 _BG       = "white"
-_LOGICAL  = "#4C72B0"    # blue — logical graph
-_SWITCH   = "#DD8452"    # orange — switch
-_CZ_COL   = "#55A868"    # green — CZ operation
-_MPP_COL  = "#C44E52"    # red — MPP operation
+_LOGICAL  = "#4C72B0"  # blue: logical graph
+_SWITCH   = "#DD8452"  # orange: switch
+_CZ_COL   = "#55A868"  # green: CZ operation
+_MPP_COL  = "#C44E52"  # red: MPP operation
 _IDLE     = "#F4F4F4"
 _BORDER   = "#555555"
 _PALETTE  = [
@@ -54,9 +54,7 @@ def make_figure(save_path=None):
     fig.suptitle("k-Port Reconfigurable Switch — How Cases 4 & 5 Work",
                  fontsize=16, fontweight="bold", y=0.98)
 
-    # ═══════════════════════════════════════════════════════════════════════
     # ROW 1 LEFT: Logical graph + explanation
-    # ═══════════════════════════════════════════════════════════════════════
     ax_concept = fig.add_axes([0.03, 0.72, 0.45, 0.22])
     ax_concept.set_xlim(-0.5, 10)
     ax_concept.set_ylim(-1, 5)
@@ -106,9 +104,7 @@ def make_figure(save_path=None):
                     "Next Tock: switch reconnects to ANY different k ELUs",
                     ha="center", fontsize=9, color="#666", fontstyle="italic")
 
-    # ═══════════════════════════════════════════════════════════════════════
     # ROW 1 RIGHT: Explanation text
-    # ═══════════════════════════════════════════════════════════════════════
     ax_text = fig.add_axes([0.52, 0.72, 0.45, 0.22])
     ax_text.axis("off")
     explanation = (
@@ -129,9 +125,7 @@ def make_figure(save_path=None):
                  bbox=dict(boxstyle="round,pad=0.5", facecolor="#F0F4FF",
                            edgecolor="#99AACC", alpha=0.9))
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # ROW 2: Case 5 — CZ Bin-Packing Example
-    # ═══════════════════════════════════════════════════════════════════════
+    # ROW 2: Case 5 - CZ Bin-Packing Example
     ax_cz = fig.add_axes([0.03, 0.38, 0.94, 0.28])
     ax_cz.set_xlim(-0.5, 24)
     ax_cz.set_ylim(-1.5, 4.5)
@@ -142,9 +136,9 @@ def make_figure(save_path=None):
 
     # Show 3 sub-batches, each with 2 CZ gates, each taking 2 Tocks
     batch_data = [
-        [("Q0", "Q1"), ("Q2", "Q3")],   # Sub-batch 1
-        [("Q4", "Q5"), ("Q0", "Q3")],   # Sub-batch 2
-        [("Q1", "Q4")],                  # Sub-batch 3 (partial)
+        [("Q0", "Q1"), ("Q2", "Q3")],  # Sub-batch 1
+        [("Q4", "Q5"), ("Q0", "Q3")],  # Sub-batch 2
+        [("Q1", "Q4")],  # Sub-batch 3 (partial)
     ]
 
     for bi, batch in enumerate(batch_data):
@@ -212,9 +206,7 @@ def make_figure(save_path=None):
                "Case 2 (k=inf): 1 colour class = 2 Tocks per round",
                ha="center", fontsize=10, color="#444", fontstyle="italic")
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # ROW 3: Case 4 — MPP Bin-Packing Example
-    # ═══════════════════════════════════════════════════════════════════════
+    # ROW 3: Case 4 - MPP Bin-Packing Example
     ax_mpp = fig.add_axes([0.03, 0.04, 0.94, 0.28])
     ax_mpp.set_xlim(-0.5, 24)
     ax_mpp.set_ylim(-1.5, 4.5)
@@ -225,15 +217,15 @@ def make_figure(save_path=None):
 
     # Show groups of generators
     group_data = [
-        # Group 1: g_1 has support {1, 0, 2} (3 ports) — fits alone in k=4
+        # Group 1: g_1 has support {1, 0, 2} (3 ports) - fits alone in k=4
         {"label": "Group 1", "generators": [
             {"id": 1, "support": ["Q1", "Q0", "Q2"], "op": "X1 Z0 Z2"},
         ], "ports": 3},
-        # Group 2: g_3 has support {3, 0, 4} (3 ports) — fits alone
+        # Group 2: g_3 has support {3, 0, 4} (3 ports) - fits alone
         {"label": "Group 2", "generators": [
             {"id": 3, "support": ["Q3", "Q0", "Q4"], "op": "X3 Z0 Z4"},
         ], "ports": 3},
-        # Group 3: g_5 has support {5, 4} (2 ports), g_6 has {6, 0} (2 ports) — combined 4 ports, fits!
+        # Group 3: g_5 has support {5, 4} (2 ports), g_6 has {6, 0} (2 ports) - combined 4 ports, fits!
         {"label": "Group 3", "generators": [
             {"id": 5, "support": ["Q5", "Q4"], "op": "X5 Z4"},
             {"id": 6, "support": ["Q6", "Q0"], "op": "X6 Z0"},

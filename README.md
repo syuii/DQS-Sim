@@ -128,7 +128,7 @@ DQS-Sim/
 │   ├── cost.py              # ResourceReport, physical-qubit formulae
 │   ├── topology.py          # k-port switch model
 │   └── visualizer.py        # Gantt, heatmaps, 2D layout, occupancy, dashboard
-├── examples/                # demo runs, thesis figures and sweeps, validation
+├── examples/                # demo runs, figures and sweeps, validation
 ├── benchmarks/              # scalability benchmarks
 ├── Results/                 # generated figures and reports
 └── legacy/                  # earlier single-file prototype (kept for reference)

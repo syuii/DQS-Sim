@@ -1,13 +1,13 @@
 """
-thesis_sweeps.py
-================
-Sweep experiments for the thesis Results chapter.
+sweeps.py
+=========
+Sweep experiments behind the main results.
 
 Three experiments, all run through the same scheduler classes as the CLI:
 
-  E1  Family survey  — all five cases on six graph families of comparable size.
-  E2  Scaling sweep  — T1 (MPP) and T2 (CZ) versus graph size n per family.
-  E3  Hardware sweep — T3 versus ancilla-pool size k, and T5 versus switch
+  E1  Family survey  - all five cases on six graph families of comparable size.
+  E2  Scaling sweep  - T1 (MPP) and T2 (CZ) versus graph size n per family.
+  E3  Hardware sweep - T3 versus ancilla-pool size k, and T5 versus switch
                        port count k, with the Case-4 feasibility threshold.
 
 Outputs
@@ -19,7 +19,7 @@ Outputs
 
 Usage
 -----
-  python examples/thesis_sweeps.py OUTPUT_DIR
+  python examples/sweeps.py OUTPUT_DIR
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ from dqs_sim.schedulers import (CZScheduler, CZSchedulerFixedAncilla,
                                 SubstrateScheduler)
 from dqs_sim.topology import KPortSwitch
 
-# ── Thesis figure style ──────────────────────────────────────────────────────
+# Figure style
 mpl.rcParams.update({
     "figure.facecolor":  "white",
     "savefig.facecolor": "white",
@@ -60,15 +60,15 @@ mpl.rcParams.update({
     "savefig.dpi":       300,
 })
 
-_W = 6.3   # thesis \textwidth in inches
+_W = 6.3  # page text width in inches
 
 # Fixed case colours (validated categorical palette; identical across figures)
 CASE_COL = {
-    1: "#285A96",   # navy  — MPP unlimited
-    2: "#C1853C",   # ochre — CZ unlimited
-    3: "#4E8C6A",   # green — CZ, k ancillas
-    4: "#9C5A8C",   # plum  — MPP, switch
-    5: "#7FA6CE",   # light navy — CZ, switch
+    1: "#285A96",  # navy : MPP unlimited
+    2: "#C1853C",  # ochre: CZ unlimited
+    3: "#4E8C6A",  # green: CZ, k ancillas
+    4: "#9C5A8C",  # plum : MPP, switch
+    5: "#7FA6CE",  # light navy: CZ, switch
 }
 RED_HL = "#B4534B"
 
@@ -81,7 +81,7 @@ CASE_LBL = {
 }
 
 
-# ── Quiet scheduler wrappers ─────────────────────────────────────────────────
+# Quiet scheduler wrappers
 
 def _quiet(fn, *a, **kw):
     buf = io.StringIO()
@@ -115,7 +115,7 @@ def t4_mpp_sw(G: nx.Graph, k: int, s: int = 1) -> int | None:
         _quiet(m.schedule)
         return m.n_tocks()
     except ValueError:
-        return None          # generator support exceeds switch width
+        return None  # generator support exceeds switch width
 
 
 def t5_cz_sw(G: nx.Graph, k: int, s: int = 1) -> int | None:
@@ -125,10 +125,10 @@ def t5_cz_sw(G: nx.Graph, k: int, s: int = 1) -> int | None:
         _quiet(c.schedule_batches)
         return c.n_tocks()
     except ValueError:
-        return None          # k < 2: cannot host a single CZ
+        return None  # k < 2: cannot host a single CZ
 
 
-# ── Graph builders ───────────────────────────────────────────────────────────
+# Graph builders
 
 def build(family: str, n: int) -> nx.Graph:
     if family == "path":
@@ -136,7 +136,7 @@ def build(family: str, n: int) -> nx.Graph:
     if family == "cycle":
         return nx.cycle_graph(n)
     if family == "star":
-        return nx.star_graph(n - 1)          # n nodes total
+        return nx.star_graph(n - 1)  # n nodes total
     if family == "complete":
         return nx.complete_graph(n)
     if family == "grid":
@@ -150,7 +150,7 @@ def build(family: str, n: int) -> nx.Graph:
     raise ValueError(family)
 
 
-# ── E1: family survey ────────────────────────────────────────────────────────
+# E1: family survey
 
 def run_survey(k_anc: int = 2, k_sw: int = 4) -> list[dict]:
     rows = []
@@ -173,7 +173,7 @@ def run_survey(k_anc: int = 2, k_sw: int = 4) -> list[dict]:
     return rows
 
 
-# ── E2: scaling sweep ────────────────────────────────────────────────────────
+# E2: scaling sweep
 
 def run_scaling() -> dict:
     ns = list(range(4, 21, 2))
@@ -188,7 +188,7 @@ def run_scaling() -> dict:
     return out
 
 
-# ── E3: hardware sweeps ──────────────────────────────────────────────────────
+# E3: hardware sweeps
 
 def run_hardware() -> dict:
     graphs = {"cycle12": build("cycle", 12), "complete8": build("complete", 8)}
@@ -206,13 +206,12 @@ def run_hardware() -> dict:
             "sw_k":    sw_k,
             "T5":      [t5_cz_sw(G, k) for k in sw_k],
             "T4":      [t4_mpp_sw(G, k) for k in sw_k],
-            "k4_min":  delta + 2,       # smallest k with |support|+1 <= k
+            "k4_min":  delta + 2,  # smallest k with |support|+1 <= k
         }
     return out
 
 
-# ── E4: MPP/CZ crossover on projective-plane incidence graphs ────────────────
-#
+# E4: MPP/CZ crossover on projective-plane incidence graphs
 # T1 is governed by the clique number of the generator conflict graph (cover
 # vertices within distance 2 of each other), while T2 = 2 chi'_greedy(G) is governed
 # by the degree.  Incidence graphs of projective planes PG(2,q) drive the two
@@ -237,7 +236,7 @@ def build_incidence(q: int) -> nx.Graph:
     G.add_nodes_from(range(2 * m))
     for i in range(m):
         for d in ds:
-            G.add_edge((d + i) % m, m + i)      # point (d+i) lies on line i
+            G.add_edge((d + i) % m, m + i)  # point (d+i) lies on line i
     return G
 
 
@@ -298,7 +297,7 @@ def run_gridflip() -> list[dict]:
     return rows
 
 
-# ── Figures ──────────────────────────────────────────────────────────────────
+# Figures
 
 FAMILY_LBL = {
     "path": "Path $P_8$", "cycle": "Cycle $C_8$", "star": "Star $K_{1,7}$",
@@ -363,7 +362,7 @@ def fig_scaling(data: dict, path: str) -> None:
         ax.set_xlabel("Graph size $n$", fontsize=8.5)
     for ax in axes[:, 0]:
         ax.set_ylabel("Tocks", fontsize=8.5)
-    axes[0, 0].set_ylim(1.4, 4.9)   # room so the legend clears both flat lines
+    axes[0, 0].set_ylim(1.4, 4.9)  # room so the legend clears both flat lines
     axes[0, 0].legend(fontsize=7.5, frameon=False, loc="center left")
     fig.tight_layout()
     fig.savefig(path, bbox_inches="tight")
@@ -510,7 +509,7 @@ def fig_crossover(rows: list[dict], grids: list[dict], path: str) -> None:
     plt.close(fig)
 
 
-# ── Entry point ──────────────────────────────────────────────────────────────
+# Entry point
 
 def main() -> None:
     out_dir = sys.argv[1] if len(sys.argv) > 1 else "Results/sweeps"

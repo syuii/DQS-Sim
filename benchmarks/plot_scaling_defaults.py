@@ -1,4 +1,4 @@
-"""Clean scaling chart for the defense deck: Case 1 and Case 2 defaults only."""
+"""Clean scaling chart: Case 1 and Case 2 defaults only."""
 import json
 import os
 

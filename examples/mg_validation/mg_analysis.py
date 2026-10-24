@@ -30,7 +30,7 @@ def quiet(fn, *a, **kw):
         return fn(*a, **kw)
 
 
-# ── 1. complete-graph scaling ───────────────────────────────────────────────
+# 1. complete-graph scaling
 ns, t1s, t2g, t2v = [], [], [], []
 for n in range(4, 17):
     G = nx.complete_graph(n)
@@ -64,7 +64,7 @@ fig.tight_layout()
 fig.savefig(OUT / "mg_complete_scaling.png", bbox_inches="tight")
 plt.close(fig)
 
-# ── 2. K5 colouring, greedy vs MG, drawn on the graph ───────────────────────
+# 2. K5 colouring, greedy vs MG, drawn on the graph
 G5 = nx.complete_graph(5)
 greedy = CZScheduler(G5); quiet(greedy.schedule_cz_rounds)
 mg = misra_gries_edge_coloring(G5)
@@ -91,7 +91,7 @@ fig.tight_layout()
 fig.savefig(OUT / "mg_k5_colourings.png", bbox_inches="tight")
 plt.close(fig)
 
-# ── 3. timing: greedy vs Misra-Gries ────────────────────────────────────────
+# 3. timing: greedy vs Misra-Gries
 cases = [
     ("K5", nx.complete_graph(5)),
     ("K20", nx.complete_graph(20)),

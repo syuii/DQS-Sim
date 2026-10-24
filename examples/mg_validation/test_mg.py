@@ -46,9 +46,9 @@ families = [
     ("hypercube Q4", nx.convert_node_labels_to_integers(nx.hypercube_graph(4))),
 ]
 
-# incidence graphs from the thesis crossover study
+# incidence graphs from the MPP vs CZ crossover study
 sys.path.insert(0, str(REPO_ROOT / "examples"))
-from thesis_sweeps import build_incidence
+from sweeps import build_incidence
 for q in (2, 3, 4, 5):
     families.append((f"PG(2,{q})", build_incidence(q)))
 

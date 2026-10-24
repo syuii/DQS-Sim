@@ -38,62 +38,57 @@ if TYPE_CHECKING:
     from substrate_scheduler import CZScheduler, CZSchedulerFixedAncilla, SubstrateScheduler
 
 
-# ---------------------------------------------------------------------------
 # Helper
-# ---------------------------------------------------------------------------
 
 def physical_qubits_per_ELU(d: int) -> int:
     """Physical qubits in a distance-d rotated surface code patch: 2d² - 1."""
     return 2 * d * d - 1
 
 
-# ---------------------------------------------------------------------------
 # Resource report dataclass
-# ---------------------------------------------------------------------------
 
 @dataclass
 class ResourceReport:
     """Full resource estimate for both Case 1 and Case 2."""
 
-    # ── Graph ────────────────────────────────────────────────────────────────
+    # Graph
     graph_type:  str
     graph_nodes: int
     graph_edges: int
     max_degree:  int
 
-    # ── Code ─────────────────────────────────────────────────────────────────
+    # Code
     code_distance: int
 
-    # ── Case 1 (MPP / stabilizer) ────────────────────────────────────────────
+    # Case 1 (MPP / stabilizer)
     mis_size:                int
     nodes_measured_case1:    int
     tocks_case1:             int
-    peak_ancilla_ELUs_case1: int   # max simultaneous measurements in one Tock
+    peak_ancilla_ELUs_case1: int  # max simultaneous measurements in one Tock
 
-    # ── Case 2 (CZ gates, unlimited ancillas) ───────────────────────────────
-    chromatic_index:         int   # χ'(G)
-    tocks_case2:             int   # = 2 × χ'(G)
-    vizing_class:            int   # 1 → χ'= Δ,  2 → χ'= Δ+1
-    peak_ancilla_ELUs_case2: int   # max simultaneous CZ gates in one round
+    # Case 2 (CZ gates, unlimited ancillas)
+    chromatic_index:         int  # χ'(G)
+    tocks_case2:             int  # = 2 × χ'(G)
+    vizing_class:            int  # 1 → χ'= Δ,  2 → χ'= Δ+1
+    peak_ancilla_ELUs_case2: int  # max simultaneous CZ gates in one round
 
-    # ── Physical (derived) ──────────────────────────────────────────────────
-    phys_per_ELU:                int   # 2d² - 1
-    data_ELUs:                   int   # = |V|
-    total_phys_qubits_case1:     int   # (data + peak_anc) × phys_per_ELU
+    # Physical (derived)
+    phys_per_ELU:                int  # 2d² - 1
+    data_ELUs:                   int  # = |V|
+    total_phys_qubits_case1:     int  # (data + peak_anc) × phys_per_ELU
     total_phys_qubits_case2:     int
 
-    # ── Comparison ───────────────────────────────────────────────────────────
-    tock_ratio_c2_c1: float   # tocks_case2 / tocks_case1
+    # Comparison
+    tock_ratio_c2_c1: float  # tocks_case2 / tocks_case1
 
-    # ── Case 3 (CZ gates, k fixed ancilla ELUs) — optional ──────────────────
+    # Case 3 (CZ gates, k fixed ancilla ELUs): optional
     ancilla_k:               int   | None = None
-    n_batches_case3:         int   | None = None   # Σᵢ ⌈|Cᵢ|/k⌉
-    tocks_case3:             int   | None = None   # 2 × n_batches
-    peak_ancilla_ELUs_case3: int   | None = None   # = k
+    n_batches_case3:         int   | None = None  # Σᵢ ⌈|Cᵢ|/k⌉
+    tocks_case3:             int   | None = None  # 2 × n_batches
+    peak_ancilla_ELUs_case3: int   | None = None  # = k
     total_phys_qubits_case3: int   | None = None
-    tock_ratio_c3_c1:        float | None = None   # tocks_case3 / tocks_case1
+    tock_ratio_c3_c1:        float | None = None  # tocks_case3 / tocks_case1
 
-    # -------------------------------------------------------------------------
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -112,7 +107,7 @@ class ResourceReport:
         c3_phys  = f"{self.total_phys_qubits_case3:,}" if has3 else "—"
         c3_ratio = f"{self.tock_ratio_c3_c1:.2f}×" if has3 else "—"
 
-        # ── Two-column or three-column separator rows ─────────────────────────
+        # Two-column or three-column separator rows
         def _sep():
             if has3:
                 return ("─" * (W - 2), "─" * 8, "─" * 8, "─" * 10)
@@ -186,9 +181,7 @@ class ResourceReport:
             print("╚" + "═" * W + "╩" + "═" * 10 + "╩" + "═" * 10 + "╝\n")
 
 
-# ---------------------------------------------------------------------------
 # Factory
-# ---------------------------------------------------------------------------
 
 def compute_report(
     scheduler: "SubstrateScheduler",
@@ -225,7 +218,7 @@ def compute_report(
     delta     = cz.max_degree
     ratio_c2  = tocks_c2 / tocks_c1 if tocks_c1 > 0 else float("inf")
 
-    # ── Case 3 (optional) ────────────────────────────────────────────────────
+    # Case 3 (optional)
     s3_k     = None
     s3_nb    = None
     s3_tocks = None
@@ -237,7 +230,7 @@ def compute_report(
         s3_k     = cz_k.k
         s3_nb    = len(cz_k.batches)
         s3_tocks = 2 * s3_nb
-        s3_peak  = cz_k.k                          # ancilla demand = k per batch
+        s3_peak  = cz_k.k  # ancilla demand = k per batch
         s3_phys  = (n + s3_peak) * phys
         s3_ratio = s3_tocks / tocks_c1 if tocks_c1 > 0 else float("inf")
 

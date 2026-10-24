@@ -1,13 +1,13 @@
 """
-benchmarks/scalability.py — runtime scaling study for DQS-Sim.
+benchmarks/scalability.py - runtime scaling study for DQS-Sim.
 
 Measures wall-clock scheduling time (no visualization, no verification) as a
 function of graph size, for:
 
-  case1        — MPP pipeline, greedy MIS + conflict-graph colouring
-  case1_exact  — MPP pipeline with exact branch-and-bound MIS
-  case2        — CZ greedy edge colouring
-  case2_vizing — CZ Misra-Gries (guaranteed Delta+1) edge colouring
+  case1        - MPP pipeline, greedy MIS + conflict-graph colouring
+  case1_exact  - MPP pipeline with exact branch-and-bound MIS
+  case2        - CZ greedy edge colouring
+  case2_vizing - CZ Misra-Gries (guaranteed Delta+1) edge colouring
 
 Each task runs in a subprocess with a timeout, so exponential blowups and
 memory walls are recorded as 'timeout' rather than hanging the sweep.
@@ -30,26 +30,22 @@ sys.path.insert(0, ROOT)
 
 DEFAULT_OUT = os.path.join(ROOT, "Results", "benchmarks")
 
-# ---------------------------------------------------------------------------
 # graph builders
-# ---------------------------------------------------------------------------
 
 def build_graph(family: str, n: int):
     import networkx as nx
     if family == "cycle":
         return nx.cycle_graph(n)
-    if family == "grid":                       # n = side; graph has n*n nodes
+    if family == "grid":  # n = side; graph has n*n nodes
         return nx.convert_node_labels_to_integers(nx.grid_2d_graph(n, n))
-    if family == "random":                     # sparse, average degree ~4
+    if family == "random":  # sparse, average degree ~4
         return nx.erdos_renyi_graph(n, 4.0 / n, seed=42)
     if family == "complete":
         return nx.complete_graph(n)
     raise ValueError(family)
 
 
-# ---------------------------------------------------------------------------
 # worker: run ONE (case, family, n) measurement, print a JSON line
-# ---------------------------------------------------------------------------
 
 def worker(task: dict) -> dict:
     from dqs_sim.schedulers import CZScheduler, SubstrateScheduler
@@ -77,15 +73,13 @@ def worker(task: dict) -> dict:
     return res
 
 
-# ---------------------------------------------------------------------------
 # driver
-# ---------------------------------------------------------------------------
 
 # sizes are the *parameter* passed to the builder (grid: side length)
 SIZES = {
     # layout-free MPP: MIS reduction + conflict-graph colouring (DSATUR)
     ("case1", "cycle"):   [50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000],
-    ("case1", "grid"):    [7, 10, 14, 22, 32, 45, 71, 100, 173],   # 49 .. 30k nodes
+    ("case1", "grid"):    [7, 10, 14, 22, 32, 45, 71, 100, 173],  # 49 .. 30k nodes
     ("case1", "random"):  [50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000],
     # exact MPP: branch-and-bound MIS
     ("case1_exact", "cycle"):  [50, 100, 200, 500, 1000, 2000, 5000],
@@ -93,7 +87,7 @@ SIZES = {
     ("case1_exact", "random"): [50, 100, 200, 500, 1000, 2000],
     # CZ colouring: near-linear, push to 100k nodes
     ("case2", "cycle"):   [100, 300, 1000, 3000, 10000, 30000, 100000],
-    ("case2", "grid"):    [10, 18, 32, 55, 100, 173, 316],        # 100 .. ~100k nodes
+    ("case2", "grid"):    [10, 18, 32, 55, 100, 173, 316],  # 100 .. ~100k nodes
     ("case2", "random"):  [100, 300, 1000, 3000, 10000, 30000, 100000],
     ("case2", "complete"): [50, 100, 200, 300],
     ("case2_vizing", "cycle"):   [100, 300, 1000, 3000, 10000, 30000, 100000],
@@ -147,9 +141,7 @@ def run(timeout: float, out_dir: str) -> None:
     print(f"\nWrote {out_path} ({len(results)} rows)")
 
 
-# ---------------------------------------------------------------------------
 # plots
-# ---------------------------------------------------------------------------
 
 FAMILY_LABEL = {"cycle": "cycle $C_n$", "grid": "grid", "random": "random (deg 4)",
                 "complete": "complete $K_n$"}
@@ -175,7 +167,7 @@ def plot(out_dir: str) -> None:
                if r["case"] == case and r["family"] == family]
         return sorted(pts)
 
-    # ---- figure 1: runtime vs size, heuristic pipeline ----
+    # figure 1: runtime vs size, heuristic pipeline
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
     ax = axes[0]
     for case in ("case1", "case2", "case2_vizing"):
@@ -194,7 +186,7 @@ def plot(out_dir: str) -> None:
     ax.grid(alpha=0.3, which="both")
     ax.legend(fontsize=6.5, ncol=1, loc="upper left")
 
-    # ---- figure 1b: exact vs heuristic MIS (total scheduling time) ----
+    # figure 1b: exact vs heuristic MIS (total scheduling time)
     ax = axes[1]
     for case in ("case1", "case1_exact"):
         for family in ("cycle", "grid", "random"):
@@ -220,8 +212,6 @@ def plot(out_dir: str) -> None:
         fig.savefig(os.path.join(out_dir, f"fig_scalability.{ext}"), dpi=180)
     print("wrote fig_scalability.{pdf,png}")
 
-
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "worker":

@@ -1,5 +1,5 @@
 """
-dqs_sim — Distributed Quantum State (Graph State) Simulator
+dqs_sim - Distributed Quantum State (Graph State) Simulator
 ============================================================
 GoSC / Lattice Surgery resource estimator for graph state generation.
 
