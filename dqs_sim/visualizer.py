@@ -1,24 +1,16 @@
 """
 visualizer.py
 =============
-Clean, scalable visualisations for the graph state generation simulator.
+Figures for DQS-Sim schedules.
 
-Four main outputs
------------------
-  show_heatmaps(scheduler, cz)
-      Compact schedule matrix - works at any vertex count.
-      Rows = qubits, columns = tocks, colour = role.
+Every figure shares one visual language:
 
-  show_2d_layout(scheduler, cz)
-      Each ELU drawn as a physical patch (rounded square).
-      Edges coloured by tock (Case 1) or CZ round (Case 2).
-
-  show_gantt(scheduler, cz)
-      Horizontal bar chart of qubit activity over time.
-      Smart tick density so axes stay readable at scale.
-
-  show_comparison_dashboard(report)
-      Three-panel bar chart: tocks / peak ancilla / physical qubits.
+  * colour = operation family:  blue for MPP (Cases 1 and 4), orange for CZ
+    (Cases 2, 3 and 5), green for MIS qubits that start in |+> for free;
+  * two shades per family: the strong shade marks the measured / second-step
+    qubit, the mid shade marks Z-neighbours / first-step qubits;
+  * time order (Tock, round, sub-batch) runs light -> dark in the family hue;
+  * idle elements are warm grey, text is near-black, titles sit top-left.
 """
 
 from __future__ import annotations
@@ -29,2160 +21,167 @@ from typing import TYPE_CHECKING
 import matplotlib as mpl
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
-from matplotlib.colors import ListedColormap
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap
+from matplotlib.lines import Line2D
 from matplotlib.patches import FancyBboxPatch
-
-
-def _init_plot_style() -> None:
-    """Serif text + Computer-Modern math for publication-style figures."""
-    mpl.rcParams.update({
-        "figure.facecolor":  "white",
-        "savefig.facecolor": "white",
-        "font.family":       "serif",
-        "font.serif":        ["DejaVu Serif", "CMU Serif", "Times New Roman"],
-        "mathtext.fontset":  "cm",
-        "axes.edgecolor":    "#5A6473",
-        "axes.labelcolor":   "#1A1A1A",
-        "axes.titlecolor":   "#1A1A1A",
-        "text.color":        "#1A1A1A",
-        "xtick.color":       "#5A6473",
-        "ytick.color":       "#5A6473",
-        "axes.linewidth":    0.8,
-        "savefig.dpi":       300,
-    })
-
-
-_init_plot_style()
 
 if TYPE_CHECKING:
     from dqs_sim.cost import ResourceReport
     from dqs_sim.schedulers import (
         CZScheduler, CZSchedulerFixedAncilla, CZSchedulerLimited,
         MPPSchedulerLimited, SubstrateScheduler,
-        ScheduledBatch, ScheduledGroup,
     )
 
 
-# Unified Style System
+# Palette
 
-# Colour palette (muted navy / warm / green)
-_PALETTE = [
-    "#285A96", "#C1853C", "#4E8C6A", "#9C5A8C",
-    "#5A6473", "#7FA6CE", "#B0743C", "#8C8C8C",
-    "#6FA890", "#3E6FA8", "#9C5A8C", "#7F7F7F",
-]
+INK       = "#1d1d1b"  # primary text
+INK_2     = "#52514e"  # secondary text, axis labels
+INK_3     = "#8a8984"  # muted captions
+RULE      = "#c9c8c2"  # axis lines, dividers
+GRID      = "#ebeae6"  # gridlines
+SURFACE   = "#ffffff"
+BAND      = "#f7f6f3"  # alternating background bands
 
-# Semantic colours
-_COL_IDLE       = "#F4F4F4"  # idle patch / tile fill
-_COL_IDLE_EDGE  = "#DDDDDD"  # idle patch / tile border
-_COL_IDLE_TEXT  = "#BBBBBB"  # idle tile label text
-_COL_MIS        = "#A8D8A8"  # MIS (|+⟩ init) fill
-_COL_MEASURE    = "#B8CDE4"  # to-measure fill (light navy)
-_COL_BORDER     = "#555555"  # default patch border
-_COL_EDGE_OFF   = "#DDDDDD"  # idle edge colour
-_COL_EMPTY_FILL = "#F8F8F8"  # empty tile fill (Case 2/3 substrate)
-_COL_EMPTY_EDGE = "#E0E0E0"  # empty tile border
-_FIG_BG         = "white"
+IDLE      = "#f3f2ef"
+IDLE_EDGE = "#e2e1dc"
+IDLE_TEXT = "#b3b2ac"
+EDGE_OFF  = "#dddcd7"  # inactive graph edges
 
-# Heatmap semantic colours (navy / ochre)
-_COL_HM_MPP_LIGHT  = "#B8CDE4"  # Case 1 heatmap: Z-neighbour (light navy)
-_COL_HM_MPP_DARK   = "#285A96"  # Case 1 heatmap: X-measured (navy)
-_COL_HM_CZ_LIGHT   = "#E6C79A"  # Case 2/3/5 heatmap: CZ step 1 (light ochre)
-_COL_HM_CZ_DARK    = "#B0743C"  # Case 2/3/5 heatmap: CZ step 2 (ochre)
+MPP       = "#2a78d6"
+MPP_MID   = "#86b6ef"
+MPP_TINT  = "#e6f0fc"
+MPP_DARK  = "#104281"
 
-# Node colours for graph views
-_COL_NODE_MIS    = "#4E8C6A"  # green: MIS / measured node
-_COL_NODE_MEAS   = "#285A96"  # navy: to-measure / measured edge
-_COL_NODE_ACTIVE = "#FFCC80"  # amber: active CZ node
-_COL_NODE_OTHER  = "#FFECB3"  # pale amber: other active node
-_COL_NODE_NBR    = "#EFDBB8"  # pale ochre: neighbour highlight
-_COL_NODE_NBR_EC = "#C1853C"  # ochre: neighbour edge
-_COL_NODE_ACT_EC = "#F57C00"  # dark amber: active CZ node edge
-_COL_NODE_OTH_EC = "#FFB74D"  # light amber: other CZ node edge
+CZ        = "#eb6834"
+CZ_MID    = "#f5a582"
+CZ_TINT   = "#fdeee7"
+CZ_DARK   = "#8f3a17"
 
-# Switch diagram colours
-_SW_COLORS_LIGHT = [
-    "#5A6473", "#4E8C6A", "#C1853C", "#9C5A8C",
-    "#3E6FA8", "#B0743C", "#6FA890", "#8C8C8C",
-]
-_SW_COLORS_DARK = [
-    "#5A6473", "#4E8C6A", "#C1853C", "#9C5A8C",
-    "#3E6FA8", "#B0743C", "#6FA890", "#8C8C8C",
-]
+FREE      = "#1baf7a"
+FREE_MID  = "#a5e0c9"
 
-# Text colours
-_COL_TEXT_DARK   = "#222222"  # primary dark text (node labels on light bg)
-_COL_TEXT_MED    = "#555555"  # medium text (row labels, axis labels)
-_COL_TEXT_LIGHT  = "#666666"  # secondary text (annotations)
-_COL_TEXT_ON_DARK = "#CCCCCC"  # text on dark backgrounds
-_COL_TEXT_GRID   = "#444444"  # grid lines / separators
+_FAMILY = {
+    "mpp": {"strong": MPP, "mid": MPP_MID, "tint": MPP_TINT, "dark": MPP_DARK},
+    "cz":  {"strong": CZ,  "mid": CZ_MID,  "tint": CZ_TINT,  "dark": CZ_DARK},
+}
 
-# Typography
-_FS_SUPTITLE = 14  # figure super-title
-_FS_TITLE    = 11  # panel / axes title
-_FS_AXIS     = 10  # axis labels (xlabel, ylabel)
-_FS_TICK     = 8  # tick labels
-_FS_TICK_SM  = 7  # small tick labels (y-axis qubit names)
-_FS_LEGEND   = 8  # legend text
-_FS_ANNOT    = 8  # in-cell text annotations
-_FS_ANNOT_SM = 6  # small annotations (heatmap cells)
-_FS_NODE     = 9  # graph node labels
-_FS_BAR      = 8  # bar chart value labels
-_FS_ROW      = 10  # row labels (Data / Ancilla)
-
-# Line widths
-_LW_THIN     = 0.6  # heatmap cell borders, dashed outlines
-_LW_NORMAL   = 0.8  # idle tiles, grid lines, default edges
-_LW_MEDIUM   = 1.2  # legend patches, node outlines
-_LW_THICK    = 1.5  # active tiles, graph edges, node patches
-_LW_HEAVY    = 2.0  # emphasis lines (capacity line, separators)
-
-# Alpha values
-_ALPHA_TILE     = 0.88  # active tile fill
-_ALPHA_HM_FILL  = 0.90  # heatmap cell fill
-_ALPHA_HM_LIGHT = 0.35  # heatmap light fill (Z-neighbour)
-_ALPHA_GRID_X   = 0.35  # x-axis grid
-_ALPHA_GRID_Y   = 0.18  # y-axis grid
-_ALPHA_SPAN     = 0.07  # background spans (round separators)
-_ALPHA_EMPTY    = 0.75  # empty tile outline
-_ALPHA_LEGEND   = 0.9  # legend frame
-_ALPHA_BAR      = 0.85  # bar chart bars
-_ALPHA_GRID     = 0.25  # comparison dashboard grid
-
-# Overflow legend entry
-_COL_OVERFLOW = "#CCCCCC"  # overflow / "other" legend swatch
+_FS_TITLE    = 12
+_FS_SUBTITLE = 9
+_FS_LABEL    = 10
+_FS_TICK     = 9
+_FS_SMALL    = 8
+_FS_TINY     = 7
 
 
-# Internal geometry helpers
-
-def _normalize_pos(pos: dict, margin: float = 0.10) -> dict:
-    """Scale spring-layout positions to [margin, 1-margin]²."""
-    xs = [p[0] for p in pos.values()]
-    ys = [p[1] for p in pos.values()]
-    x_min, x_max = min(xs), max(xs)
-    y_min, y_max = min(ys), max(ys)
-    x_rng = x_max - x_min or 1.0
-    y_rng = y_max - y_min or 1.0
-    s = 1.0 - 2 * margin
-    return {
-        n: (margin + s * (p[0] - x_min) / x_rng,
-            margin + s * (p[1] - y_min) / y_rng)
-        for n, p in pos.items()
-    }
-
-
-def _adaptive_hw(pos: dict) -> float:
-    """
-    Compute patch half-width = 30 % of the minimum inter-node distance,
-    clamped to a sensible range.
-    """
-    pts = list(pos.values())
-    if len(pts) < 2:
-        return 0.05
-    min_d = min(
-        math.hypot(a[0] - b[0], a[1] - b[1])
-        for i, a in enumerate(pts)
-        for b in pts[i + 1:]
-    )
-    return max(0.012, min(0.055, min_d * 0.30))
-
-
-def _border_exit(cx: float, cy: float,
-                 tx: float, ty: float, hw: float) -> tuple[float, float]:
-    """
-    Return the point where the ray from (cx, cy) toward (tx, ty)
-    first exits the square patch of half-width *hw* centred at (cx, cy).
-    """
-    dx, dy = tx - cx, ty - cy
-    if abs(dx) < 1e-10 and abs(dy) < 1e-10:
-        return cx + hw, cy
-    t_x = hw / abs(dx) if abs(dx) > 1e-10 else float("inf")
-    t_y = hw / abs(dy) if abs(dy) > 1e-10 else float("inf")
-    t   = min(t_x, t_y)
-    return cx + dx * t, cy + dy * t
+def _init_plot_style() -> None:
+    """Shared Matplotlib defaults for every DQS-Sim figure."""
+    mpl.rcParams.update({
+        "figure.facecolor":    SURFACE,
+        "savefig.facecolor":   SURFACE,
+        "axes.facecolor":      SURFACE,
+        "font.family":         "sans-serif",
+        "font.sans-serif":     ["Inter", "Helvetica Neue", "Helvetica", "Arial",
+                                "DejaVu Sans"],
+        "mathtext.fontset":    "dejavusans",
+        "text.color":          INK,
+        "axes.labelcolor":     INK_2,
+        "axes.titlecolor":     INK,
+        "axes.edgecolor":      RULE,
+        "axes.linewidth":      0.8,
+        "axes.spines.top":     False,
+        "axes.spines.right":   False,
+        "axes.titlesize":      _FS_TITLE,
+        "axes.titleweight":    "bold",
+        "axes.titlelocation":  "left",
+        "axes.labelsize":      _FS_LABEL,
+        "xtick.color":         RULE,
+        "ytick.color":         RULE,
+        "xtick.labelcolor":    INK_2,
+        "ytick.labelcolor":    INK_2,
+        "xtick.labelsize":     _FS_TICK,
+        "ytick.labelsize":     _FS_TICK,
+        "xtick.major.size":    0,
+        "ytick.major.size":    0,
+        "legend.frameon":      False,
+        "legend.fontsize":     _FS_SMALL,
+        "legend.handlelength": 1.2,
+        "legend.handleheight": 1.0,
+        "savefig.dpi":         200,
+    })
 
 
-# Tick helpers
-
-def _smart_ticks(ax: plt.Axes, n: int, axis: str = "x",
-                 labels: list[str] | None = None, fontsize: int = 8) -> None:
-    """Label every k-th tick so the axis stays readable at any scale."""
-    step   = max(1, n // 20)
-    ticks  = list(range(0, n, step))
-    lbl    = [labels[i] for i in ticks] if labels else [str(i) for i in ticks]
-    setter = ax.set_xticks if axis == "x" else ax.set_yticks
-    labset = ax.set_xticklabels if axis == "x" else ax.set_yticklabels
-    setter(ticks)
-    labset(lbl, fontsize=fontsize)
+_init_plot_style()
 
 
-def _fig_height(n: int) -> float:
-    return max(4.0, min(n * 0.30 + 2.5, 22.0))
+# Small helpers
+
+def _shades(family: str, n: int) -> list[str]:
+    """n colours in the family hue, ordered light -> dark (time order)."""
+    f = _FAMILY[family]
+    if n <= 0:
+        return []
+    if n == 1:
+        return [f["strong"]]
+    cmap = LinearSegmentedColormap.from_list(
+        family, [f["mid"], f["strong"], f["dark"]])
+    return [mpl.colors.to_hex(cmap(i / (n - 1))) for i in range(n)]
 
 
-# 2D Patch Layout
-
-def _draw_patch_layout(
-    pos:        dict,  # normalised {node: (x, y)}
-    node_fill:  dict,  # {node: hex}
-    node_lw:    dict,  # {node: float}
-    node_ec:    dict,  # {node: hex}
-    edge_col:   dict,  # {(u,v): hex}  canonical u < v
-    edge_lw:    dict,  # {(u,v): float}
-    edges:      list,  # all edges to draw (from G)
-    ax:         plt.Axes,
-    title:      str,
-    hw:         float,
-    show_labels: bool = True,
-) -> None:
-    """
-    Core 2D patch renderer.  Draws edges first (lines from border to border),
-    then ELU patches (rounded squares) on top.
-    """
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.set_aspect("equal")
-    ax.axis("off")
-    ax.set_title(title, fontsize=_FS_TITLE, fontweight="bold", pad=10)
-
-    # edges
-    for u, v in edges:
-        cx_u, cy_u = pos[u]
-        cx_v, cy_v = pos[v]
-        ex_u, ey_u = _border_exit(cx_u, cy_u, cx_v, cy_v, hw)
-        ex_v, ey_v = _border_exit(cx_v, cy_v, cx_u, cy_u, hw)
-        key = (min(u, v), max(u, v))
-        col = edge_col.get(key, _COL_EDGE_OFF)
-        lw  = edge_lw.get(key, _LW_NORMAL)
-        ax.plot([ex_u, ex_v], [ey_u, ey_v],
-                color=col, linewidth=lw,
-                solid_capstyle="round", zorder=1)
-
-    # patches
-    for node, (cx, cy) in pos.items():
-        fc  = node_fill.get(node, _COL_IDLE)
-        ec  = node_ec.get(node, _COL_BORDER)
-        lw  = node_lw.get(node, _LW_MEDIUM)
-        box = FancyBboxPatch(
-            (cx - hw, cy - hw), 2 * hw, 2 * hw,
-            boxstyle="round,pad=0.015",
-            facecolor=fc, edgecolor=ec,
-            linewidth=lw, zorder=2,
-        )
-        ax.add_patch(box)
-
-        # Port indicator dots (N / S / E / W communication qubits)
-        dot_r = hw * 0.18
-        for dx, dy in [(0, hw), (0, -hw), (hw, 0), (-hw, 0)]:
-            ax.add_patch(plt.Circle(
-                (cx + dx * 0.92, cy + dy * 0.92), dot_r,
-                color=_COL_IDLE_EDGE, zorder=3,
-            ))
-
-        # Label
-        if show_labels:
-            ax.text(cx, cy, str(node),
-                    ha="center", va="center",
-                    fontsize=max(6, min(10, int(hw * 160))),
-                    fontweight="bold", color=_COL_TEXT_DARK, zorder=4)
-
-
-def show_2d_layout(
-    scheduler: "SubstrateScheduler",
-    cz:        "CZScheduler",
-    cz_k:      "CZSchedulerFixedAncilla | None" = None,
-    save_path: str | None = None,
-    display:   bool = False,
-) -> None:
-    """
-    Two-panel figure showing QPUs as physical surface-code patches.
-
-    Left  - Case 1: MIS nodes (green) vs to-measure (pink).
-             Edges coloured by the Tock in which they are activated.
-    Right - Case 2: Edges coloured by CZ round.
-
-    When cz_k is provided, a third panel is added for Case 3 with edges
-    coloured by sub-batch index.
-
-    Small dots on each patch edge represent the four communication-qubit
-    ports used for lattice-surgery Bell pairs.
-    """
-    G   = scheduler.G
-    n   = len(G.nodes)
-    raw = scheduler._get_pos()
-    pos = _normalize_pos(raw)
-    hw  = _adaptive_hw(pos)
-    show_labels = n <= 30
-
-    # Build edge -> tock map for Case 1
-    edge_tock: dict[tuple, int] = {}
-    for t, tock in enumerate(scheduler.schedule):
-        for b in tock:
-            u = b["id"]
-            for v in b["neighbors"]:
-                key = (min(u, v), max(u, v))
-                if key not in edge_tock:
-                    edge_tock[key] = t
-
-    # Build edge -> round map for Case 2
-    edge_round: dict[tuple, int] = {
-        (min(u, v), max(u, v)): r
-        for r, edges in enumerate(cz.cz_rounds)
-        for u, v in edges
-    }
-
-    all_edges = list(G.edges())
-    n_tocks   = len(scheduler.schedule)
-    n_rounds  = cz.chromatic_index
-
-    # Case 1 colours
-    c1_node_fill = {
-        nd: (_COL_MIS if nd in scheduler.mis else _COL_MEASURE)
-        for nd in G.nodes
-    }
-    c1_node_ec = {
-        nd: (_COL_NODE_MIS if nd in scheduler.mis else _COL_NODE_MEAS)
-        for nd in G.nodes
-    }
-    c1_node_lw  = {nd: _LW_THICK for nd in G.nodes}
-    c1_edge_col = {
-        (min(u, v), max(u, v)): _PALETTE[edge_tock[(min(u,v),max(u,v))] % len(_PALETTE)]
-        if (min(u,v), max(u,v)) in edge_tock else _COL_EDGE_OFF
-        for u, v in all_edges
-    }
-    c1_edge_lw = {
-        (min(u, v), max(u, v)): (
-            _LW_THICK if (min(u,v),max(u,v)) in edge_tock else _LW_THIN
-        )
-        for u, v in all_edges
-    }
-
-    # Case 2 colours
-    c2_node_fill = {nd: _COL_IDLE for nd in G.nodes}
-    c2_node_ec   = {nd: _COL_BORDER for nd in G.nodes}
-    c2_node_lw   = {nd: _LW_MEDIUM for nd in G.nodes}
-    c2_edge_col  = {
-        (min(u, v), max(u, v)): _PALETTE[edge_round[(min(u,v),max(u,v))] % len(_PALETTE)]
-        if (min(u,v), max(u,v)) in edge_round else _COL_EDGE_OFF
-        for u, v in all_edges
-    }
-    c2_edge_lw = {
-        (min(u, v), max(u, v)): _LW_HEAVY
-        for u, v in all_edges
-    }
-
-    # Figure
-    has_case3 = cz_k is not None
-    fig_w = 24 if has_case3 else 16
-    if has_case3:
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(fig_w, 8), facecolor=_FIG_BG)
+def _title(ax: plt.Axes, title: str, subtitle: str | None = None) -> None:
+    """Left-aligned bold title with an optional muted subtitle underneath."""
+    if subtitle:
+        ax.set_title(title, pad=24)
+        ax.annotate(subtitle, xy=(0, 1), xycoords="axes fraction",
+                    xytext=(0, 6), textcoords="offset points",
+                    fontsize=_FS_SUBTITLE, color=INK_3, ha="left", va="bottom")
     else:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(fig_w, 8), facecolor=_FIG_BG)
-    # fig.suptitle("2D QPU Patch Layout", fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01)
-    _draw_patch_layout(
-        pos, c1_node_fill, c1_node_lw, c1_node_ec,
-        c1_edge_col, c1_edge_lw, all_edges,
-        ax1,
-        f"Case 1 - MPP  (edges coloured by Tock, {n_tocks} total)",
-        hw, show_labels,
-    )
-    _draw_patch_layout(
-        pos, c2_node_fill, c2_node_lw, c2_node_ec,
-        c2_edge_col, c2_edge_lw, all_edges,
-        ax2,
-        f"Case 2 - CZ Gates  (edges coloured by Round, {n_rounds} total)",
-        hw, show_labels,
-    )
-
-    # Legends
-    # Case 1 node legend
-    ax1.legend(
-        handles=[
-            mpatches.Patch(facecolor=_COL_MIS,     edgecolor=_COL_NODE_MIS,  lw=_LW_THICK, label="MIS - init |+⟩"),
-            mpatches.Patch(facecolor=_COL_MEASURE,  edgecolor=_COL_NODE_MEAS, lw=_LW_THICK, label="Measured"),
-        ],
-        fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND,
-        loc="lower left", borderpad=0.8,
-    )
-
-    # Case 1 tock legend (compact, only first 8 colours)
-    n_show = min(n_tocks, 8)
-    ax1_leg2_handles = [
-        mpatches.Patch(facecolor=_PALETTE[t % len(_PALETTE)],
-                       label=f"Tock {t + 1}")
-        for t in range(n_show)
-    ]
-    if n_tocks > 8:
-        ax1_leg2_handles.append(
-            mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"... +{n_tocks - 8} more")
-        )
-    ax1.legend(
-        handles=ax1_leg2_handles,
-        fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND,
-        loc="lower right", ncol=2, borderpad=0.8,
-        title="Tock", title_fontsize=_FS_LEGEND,
-    )
-
-    # Case 2 round legend
-    n_show2 = min(n_rounds, 8)
-    ax2_handles = [
-        mpatches.Patch(facecolor=_PALETTE[r % len(_PALETTE)],
-                       label=f"Round {r + 1}")
-        for r in range(n_show2)
-    ]
-    if n_rounds > 8:
-        ax2_handles.append(
-            mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"... +{n_rounds - 8} more")
-        )
-    ax2.legend(
-        handles=ax2_handles,
-        fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND,
-        loc="lower right", ncol=2, borderpad=0.8,
-        title="CZ Round", title_fontsize=_FS_LEGEND,
-    )
-
-    # Case 3 panel (optional)
-    if has_case3:
-        edge_batch: dict[tuple, int] = {
-            (min(u, v), max(u, v)): b
-            for b, batch in enumerate(cz_k.batches)
-            for u, v in batch
-        }
-        c3_node_fill = {nd: _COL_IDLE   for nd in G.nodes}
-        c3_node_ec   = {nd: _COL_BORDER for nd in G.nodes}
-        c3_node_lw   = {nd: _LW_MEDIUM   for nd in G.nodes}
-        c3_edge_col  = {
-            (min(u, v), max(u, v)): _PALETTE[edge_batch[(min(u,v),max(u,v))] % len(_PALETTE)]
-            if (min(u,v), max(u,v)) in edge_batch else _COL_EDGE_OFF
-            for u, v in all_edges
-        }
-        c3_edge_lw   = {(min(u, v), max(u, v)): _LW_HEAVY for u, v in all_edges}
-
-        n_batches = len(cz_k.batches)
-        _draw_patch_layout(
-            pos, c3_node_fill, c3_node_lw, c3_node_ec,
-            c3_edge_col, c3_edge_lw, all_edges,
-            ax3,
-            f"Case 3 - CZ Gates  (edges coloured by Sub-batch, k={cz_k.k}, {n_batches} total)",
-            hw, show_labels,
-        )
-        n_show3 = min(n_batches, 8)
-        ax3_handles = [
-            mpatches.Patch(facecolor=_PALETTE[b % len(_PALETTE)],
-                           label=f"Batch {b + 1}")
-            for b in range(n_show3)
-        ]
-        if n_batches > 8:
-            ax3_handles.append(
-                mpatches.Patch(facecolor=_COL_OVERFLOW, label=f"... +{n_batches - 8} more")
-            )
-        ax3.legend(
-            handles=ax3_handles,
-            fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND,
-            loc="lower right", ncol=2, borderpad=0.8,
-            title="Sub-batch", title_fontsize=_FS_LEGEND,
-        )
-
-    plt.tight_layout()
-    _save_or_show(fig, save_path, "2D layout", display)
+        ax.set_title(title, pad=10)
 
 
-# Schedule Heatmap
-
-def _build_heatmap_case1(scheduler: "SubstrateScheduler") -> np.ndarray:
-    """Matrix[qubit_row, tock] = 0 (idle) | 1 (Z-neighbour) | 2 (X-measured)."""
-    G   = scheduler.G
-    nds = list(G.nodes)
-    ntr = {n: i for i, n in enumerate(nds)}
-    m   = np.zeros((len(nds), len(scheduler.schedule)), dtype=np.int8)
-    for t, tock in enumerate(scheduler.schedule):
-        for b in tock:
-            m[ntr[b["id"]], t] = 2
-            for nb in b["neighbors"]:
-                if m[ntr[nb], t] == 0:
-                    m[ntr[nb], t] = 1
-    return m
+def _legend_above(ax: plt.Axes, handles: list) -> None:
+    """Legend in one row above the top-right corner of the axes."""
+    ax.legend(handles=handles, loc="lower right", bbox_to_anchor=(1.0, 1.0),
+              ncol=len(handles), borderaxespad=0.3, columnspacing=1.2,
+              handletextpad=0.5)
 
 
-def _build_heatmap_case2(cz: "CZScheduler") -> np.ndarray:
-    """Matrix[qubit_row, tock] = 0 (idle) | 1 (step-1 qubit) | 2 (step-2 qubit)."""
-    G   = cz.G
-    nds = list(G.nodes)
-    ntr = {n: i for i, n in enumerate(nds)}
-    n_t = 2 * cz.chromatic_index
-    m   = np.zeros((len(nds), n_t), dtype=np.int8)
-    for r, edges in enumerate(cz.cz_rounds):
-        t1, t2 = 2 * r, 2 * r + 1
-        for u, v in edges:
-            m[ntr[u], t1] = 1
-            m[ntr[v], t2] = 2
-    return m
+def _swatch(colour: str, label: str, edge: str | None = None) -> mpatches.Patch:
+    return mpatches.Patch(facecolor=colour, edgecolor=edge or colour,
+                          linewidth=0.8, label=label)
 
 
-def _build_heatmap_case3(cz_k: "CZSchedulerFixedAncilla") -> np.ndarray:
-    """Matrix[qubit_row, tock] = 0 (idle) | 1 (step-1 qubit) | 2 (step-2 qubit)."""
-    G   = cz_k.G
-    nds = list(G.nodes)
-    ntr = {n: i for i, n in enumerate(nds)}
-    n_t = cz_k.n_tocks()
-    m   = np.zeros((len(nds), n_t), dtype=np.int8)
-    for b, batch in enumerate(cz_k.batches):
-        t1, t2 = 2 * b, 2 * b + 1
-        for u, v in batch:
-            m[ntr[u], t1] = 1
-            m[ntr[v], t2] = 2
-    return m
+def _text_on(fill: str) -> str:
+    """White text on strong fills, ink on light ones."""
+    r, g, b = mpl.colors.to_rgb(fill)
+    luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return "white" if luminance < 0.55 else INK
 
 
-def plot_heatmap(
-    matrix:   np.ndarray,
-    x_labels: list[str],
-    y_labels: list[str],
-    title:    str,
-    cmap:     ListedColormap,
-    legend_handles: list,
-    ax:       plt.Axes,
-    vline_every: int = 0,
-) -> None:
-    """
-    Generic schedule heatmap renderer using imshow.
-    Works cleanly for any number of qubits and tocks.
-    """
-    n_q, n_t = matrix.shape
-
-    ax.imshow(
-        matrix, aspect="auto",
-        cmap=cmap, vmin=0, vmax=cmap.N - 1,
-        interpolation="nearest", origin="upper",
-    )
-
-    # Grid lines between cells
-    ax.set_xticks(np.arange(-0.5, n_t, 1), minor=True)
-    ax.set_yticks(np.arange(-0.5, n_q, 1), minor=True)
-    ax.grid(which="minor", color="white", linewidth=_LW_THIN, zorder=3)
-    ax.tick_params(which="minor", length=0)
-
-    # Optional vertical dividers (e.g. every CZ round)
-    if vline_every > 0:
-        for x in range(vline_every - 1, n_t, vline_every):
-            ax.axvline(x + 0.5, color=_COL_TEXT_GRID, linewidth=_LW_NORMAL, zorder=4)
-
-    # Smart axis labels
-    x_step = max(1, n_t // 25)
-    y_step = max(1, n_q // 25)
-    ax.set_xticks(range(0, n_t, x_step))
-    ax.set_xticklabels(x_labels[::x_step], fontsize=_FS_TICK_SM, rotation=45, ha="right")
-    ax.set_yticks(range(0, n_q, y_step))
-    ax.set_yticklabels(y_labels[::y_step], fontsize=_FS_TICK_SM)
-
-    ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
-    ax.set_ylabel("Qubit / QPU", fontsize=_FS_AXIS)
-    ax.set_title(title, fontsize=_FS_TITLE, fontweight="bold", pad=8)
-
-    ax.legend(
-        handles=legend_handles,
-        fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND,
-        loc="upper right", bbox_to_anchor=(1.0, -0.14),
-        ncol=len(legend_handles), borderpad=0.6,
-    )
-
-
-def show_heatmaps(
-    scheduler: "SubstrateScheduler",
-    cz:        "CZScheduler",
-    cz_k:      "CZSchedulerFixedAncilla | None" = None,
-    save_path: str | None = None,
-    display:   bool = False,
-) -> None:
-    """
-    Side-by-side schedule heatmaps for Case 1 and Case 2.
-
-    Every cell is one (qubit, tock) pair.  Works cleanly for any graph size -
-    at high vertex counts the cell shading communicates the schedule pattern
-    even without readable labels.
-    """
-    G   = scheduler.G
-    nds = list(G.nodes)
-    n_q = len(nds)
-
-    mat1 = _build_heatmap_case1(scheduler)
-    mat2 = _build_heatmap_case2(cz)
-    n_t1 = mat1.shape[1]
-    n_t2 = mat2.shape[1]
-
-    has_case3 = cz_k is not None
-    if has_case3:
-        mat3 = _build_heatmap_case3(cz_k)
-        n_t3 = mat3.shape[1]
+def _positions(G: nx.Graph) -> dict:
+    """One layout per graph, shared by every figure (grids come out as grids)."""
+    key = (tuple(G.nodes), tuple(G.edges))
+    cached = _POS_CACHE.get(id(G))
+    if cached and cached[0] == key:
+        return cached[1]
+    n = len(G)
+    if n == 0:
+        pos = {}
+    elif 2 < n <= 120 and nx.is_connected(G):
+        pos = nx.kamada_kawai_layout(G)
     else:
-        n_t3 = 0
+        pos = nx.spring_layout(G, seed=42)
+    _POS_CACHE[id(G)] = (key, pos)
+    return pos
 
-    # Case 1: white | light blue | deep blue
-    cmap1 = ListedColormap([_COL_IDLE, _COL_HM_MPP_LIGHT, _COL_HM_MPP_DARK])
-    # Case 2: white | amber | deep orange
-    cmap2 = ListedColormap([_COL_IDLE, _COL_HM_CZ_LIGHT, _COL_HM_CZ_DARK])
 
-    x_lbl1 = [f"T{t+1}" for t in range(n_t1)]
-    x_lbl2 = [f"T{t+1}" for t in range(n_t2)]
-    y_lbl  = [f"Q{nd}"  for nd in nds]
+_POS_CACHE: dict = {}
 
-    legend1 = [
-        mpatches.Patch(facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, label="Idle"),
-        mpatches.Patch(facecolor=_COL_HM_MPP_LIGHT, label="Z-neighbour"),
-        mpatches.Patch(facecolor=_COL_HM_MPP_DARK, label="X-measured"),
-    ]
-    legend2 = [
-        mpatches.Patch(facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, label="Idle"),
-        mpatches.Patch(facecolor=_COL_HM_CZ_LIGHT, label="Step 1  (Z_u⊗Z_anc)"),
-        mpatches.Patch(facecolor=_COL_HM_CZ_DARK, label="Step 2  (Z_v⊗Z_anc)"),
-    ]
 
-    height = max(5, min(n_q * 0.22 + 3, 20))
-    fig_w  = max(14, (n_t1 + n_t2 + n_t3) * 0.3 + 8)
-
-    if has_case3:
-        fig, (ax1, ax2, ax3) = plt.subplots(
-            1, 3, figsize=(fig_w, height), facecolor=_FIG_BG,
-        )
-    else:
-        fig, (ax1, ax2) = plt.subplots(
-            1, 2, figsize=(fig_w, height), facecolor=_FIG_BG,
-        )
-    # fig.suptitle("Schedule Heatmaps", fontsize=_FS_SUPTITLE, fontweight="bold")
-    plot_heatmap(mat1, x_lbl1, y_lbl,
-                 f"Case 1 - MPP  ({n_t1} Tock{'s' if n_t1!=1 else ''})",
-                 cmap1, legend1, ax1)
-    plot_heatmap(mat2, x_lbl2, y_lbl,
-                 f"Case 2 - CZ  ({n_t2} Tock{'s' if n_t2!=1 else ''},"
-                 f"  {cz.chromatic_index} rounds)",
-                 cmap2, legend2, ax2,
-                 vline_every=2)  # divider every CZ round
-
-    if has_case3:
-        x_lbl3  = [f"T{t+1}" for t in range(n_t3)]
-        legend3 = [
-            mpatches.Patch(facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, label="Idle"),
-            mpatches.Patch(facecolor=_COL_HM_CZ_LIGHT, label="Step 1  (Z_u⊗Z_anc)"),
-            mpatches.Patch(facecolor=_COL_HM_CZ_DARK, label="Step 2  (Z_v⊗Z_anc)"),
-        ]
-        plot_heatmap(mat3, x_lbl3, y_lbl,
-                     f"Case 3 - CZ  (k={cz_k.k},  {n_t3} Tock{'s' if n_t3!=1 else ''},  {len(cz_k.batches)} batches)",
-                     cmap2, legend3, ax3,
-                     vline_every=2)
-
-    plt.tight_layout(rect=[0, 0.06, 1, 1])
-    _save_or_show(fig, save_path, "heatmap", display)
-
-
-# Gantt charts  (improved: smart y-ticks, cleaner grid)
-
-def plot_gantt_case1(scheduler: "SubstrateScheduler", ax: plt.Axes) -> None:
-    """Gantt chart for Case 1, with one row per data QPU."""
-    G            = scheduler.G
-    nodes_sorted = sorted(G.nodes, key=lambda nd: scheduler.mapping[nd])
-    node_to_row  = {nd: i for i, nd in enumerate(nodes_sorted)}
-    n_t          = len(scheduler.schedule)
-    n_q          = len(nodes_sorted)
-
-    ax.set_xlim(0, n_t)
-    ax.set_ylim(-0.5, n_q - 0.5)
-    ax.set_facecolor(_FIG_BG)
-    ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
-    ax.set_ylabel("Data QPU", fontsize=_FS_AXIS)
-    ax.set_title("Case 1 - MPP Schedule", fontsize=_FS_TITLE, fontweight="bold")
-    ax.spines[["top", "right"]].set_visible(False)
-
-    x_lbl = [f"T{t+1}" for t in range(n_t)]
-    y_lbl = [f"Q{scheduler.mapping[nd]}" for nd in nodes_sorted]
-    _smart_ticks(ax, n_t,  "x", x_lbl, fontsize=_FS_TICK)
-    _smart_ticks(ax, n_q,  "y", y_lbl, fontsize=_FS_TICK_SM)
-    ax.grid(axis="x", linestyle=":", alpha=_ALPHA_GRID_X, zorder=0)
-    ax.grid(axis="y", linestyle=":", alpha=_ALPHA_GRID_Y, zorder=0)
-
-    for t, tock in enumerate(scheduler.schedule):
-        col = _PALETTE[t % len(_PALETTE)]
-        for b in tock:
-            row = node_to_row[b["id"]]
-            ax.broken_barh([(t + 0.07, 0.86)], (row - 0.38, 0.76),
-                           facecolors=col, edgecolors="white",
-                           linewidth=_LW_THIN, alpha=_ALPHA_HM_FILL, zorder=2)
-            if n_q <= 40:
-                ax.text(t + 0.5, row, "X", ha="center", va="center",
-                        fontsize=_FS_ANNOT_SM, fontweight="bold", color="white", zorder=3)
-            for nb in b["neighbors"]:
-                r_nb = node_to_row[nb]
-                ax.broken_barh([(t + 0.07, 0.86)], (r_nb - 0.38, 0.76),
-                               facecolors=col, edgecolors="white",
-                               linewidth=_LW_THIN, alpha=_ALPHA_HM_LIGHT, zorder=2)
-                if n_q <= 40:
-                    ax.text(t + 0.5, r_nb, "Z", ha="center", va="center",
-                            fontsize=_FS_ANNOT_SM, color="white", zorder=3)
-
-    ax.legend(
-        handles=[
-            mpatches.Patch(facecolor=_COL_TEXT_GRID, alpha=_ALPHA_HM_FILL, label="X-measured"),
-            mpatches.Patch(facecolor=_COL_TEXT_GRID, alpha=_ALPHA_HM_LIGHT, label="Z-neighbour"),
-        ],
-        fontsize=_FS_LEGEND, frameon=False, loc="upper right",
-    )
-
-
-def plot_gantt_case2(cz: "CZScheduler", ax: plt.Axes) -> None:
-    """Gantt chart for Case 2 - each CZ round = 2 consecutive Tocks."""
-    G            = cz.G
-    nodes_list   = list(G.nodes)
-    node_to_row  = {nd: i for i, nd in enumerate(nodes_list)}
-    n_q          = len(nodes_list)
-    n_t          = 2 * cz.chromatic_index
-
-    ax.set_xlim(0, n_t)
-    ax.set_ylim(-0.5, n_q - 0.5)
-    ax.set_facecolor(_FIG_BG)
-    ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
-    ax.set_ylabel("Qubit / QPU", fontsize=_FS_AXIS)
-    ax.set_title("Case 2 - CZ-Gate Schedule", fontsize=_FS_TITLE, fontweight="bold")
-    ax.spines[["top", "right"]].set_visible(False)
-
-    x_lbl = [f"T{t+1}" for t in range(n_t)]
-    y_lbl = [f"Q{nd}"  for nd in nodes_list]
-    _smart_ticks(ax, n_t, "x", x_lbl, fontsize=_FS_TICK)
-    _smart_ticks(ax, n_q, "y", y_lbl, fontsize=_FS_TICK_SM)
-    ax.grid(axis="x", linestyle=":", alpha=_ALPHA_GRID_X, zorder=0)
-    ax.grid(axis="y", linestyle=":", alpha=_ALPHA_GRID_Y, zorder=0)
-
-    for r, edges in enumerate(cz.cz_rounds):
-        col   = _PALETTE[r % len(_PALETTE)]
-        t1, t2 = 2 * r, 2 * r + 1
-        # Light band per round
-        ax.axvspan(t1, t2 + 1, alpha=_ALPHA_SPAN, color=col, zorder=0)
-        if n_t <= 80:
-            ax.text(t1 + 1.0, n_q - 0.3,
-                    f"R{r+1}", ha="center", va="center",
-                    fontsize=_FS_ANNOT_SM, color=col, fontweight="bold", zorder=3)
-        for u, v in edges:
-            for tock, qubit in [(t1, u), (t2, v)]:
-                row = node_to_row[qubit]
-                ax.broken_barh([(tock + 0.07, 0.86)], (row - 0.38, 0.76),
-                               facecolors=col, edgecolors="white",
-                               linewidth=_LW_THIN, alpha=_ALPHA_BAR, zorder=2)
-                if n_q <= 40:
-                    ax.text(tock + 0.5, row, "Z", ha="center", va="center",
-                            fontsize=_FS_ANNOT_SM, fontweight="bold", color="white", zorder=3)
-
-
-def plot_gantt_case3(cz_k: "CZSchedulerFixedAncilla", ax: plt.Axes) -> None:
-    """Gantt chart for Case 3 - sub-batches of k CZ gates, 2 Tocks each."""
-    G            = cz_k.G
-    nodes_list   = list(G.nodes)
-    node_to_row  = {nd: i for i, nd in enumerate(nodes_list)}
-    n_q          = len(nodes_list)
-    n_t          = cz_k.n_tocks()
-
-    ax.set_xlim(0, n_t)
-    ax.set_ylim(-0.5, n_q - 0.5)
-    ax.set_facecolor(_FIG_BG)
-    ax.set_xlabel("Tock  (logical time step)", fontsize=_FS_AXIS)
-    ax.set_ylabel("Qubit / QPU", fontsize=_FS_AXIS)
-    ax.set_title(f"Case 3 - CZ  (k={cz_k.k} ancilla(s),  {len(cz_k.batches)} sub-batches)",
-                 fontsize=_FS_TITLE, fontweight="bold")
-    ax.spines[["top", "right"]].set_visible(False)
-
-    x_lbl = [f"T{t+1}" for t in range(n_t)]
-    y_lbl = [f"Q{nd}"  for nd in nodes_list]
-    _smart_ticks(ax, n_t, "x", x_lbl, fontsize=_FS_TICK)
-    _smart_ticks(ax, n_q, "y", y_lbl, fontsize=_FS_TICK_SM)
-    ax.grid(axis="x", linestyle=":", alpha=_ALPHA_GRID_X, zorder=0)
-    ax.grid(axis="y", linestyle=":", alpha=_ALPHA_GRID_Y, zorder=0)
-
-    for b, batch in enumerate(cz_k.batches):
-        col   = _PALETTE[b % len(_PALETTE)]
-        t1, t2 = 2 * b, 2 * b + 1
-        ax.axvspan(t1, t2 + 1, alpha=_ALPHA_SPAN, color=col, zorder=0)
-        if n_t <= 80:
-            ax.text(t1 + 1.0, n_q - 0.3,
-                    f"B{b+1}", ha="center", va="center",
-                    fontsize=_FS_ANNOT_SM, color=col, fontweight="bold", zorder=3)
-        for u, v in batch:
-            for tock, qubit in [(t1, u), (t2, v)]:
-                row = node_to_row[qubit]
-                ax.broken_barh([(tock + 0.07, 0.86)], (row - 0.38, 0.76),
-                               facecolors=col, edgecolors="white",
-                               linewidth=_LW_THIN, alpha=_ALPHA_BAR, zorder=2)
-                if n_q <= 40:
-                    ax.text(tock + 0.5, row, "Z", ha="center", va="center",
-                            fontsize=_FS_ANNOT_SM, fontweight="bold", color="white", zorder=3)
-
-
-def show_gantt(
-    scheduler: "SubstrateScheduler",
-    cz:        "CZScheduler",
-    cz_k:      "CZSchedulerFixedAncilla | None" = None,
-    save_path: str | None = None,
-    display:   bool = False,
-) -> None:
-    """Side-by-side Gantt charts for both (or all three) cases."""
-    n_q    = len(scheduler.G.nodes)
-    height = _fig_height(n_q)
-    if cz_k is not None:
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(27, height),
-                                             facecolor=_FIG_BG)
-    else:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, height),
-                                       facecolor=_FIG_BG)
-    # fig.suptitle("Schedule Gantt Charts", fontsize=_FS_SUPTITLE, fontweight="bold")
-    plot_gantt_case1(scheduler, ax1)
-    plot_gantt_case2(cz, ax2)
-    if cz_k is not None:
-        plot_gantt_case3(cz_k, ax3)
-    plt.tight_layout()
-    _save_or_show(fig, save_path, "Gantt chart", display)
-
-
-# Comparison dashboard  (bar charts: unchanged logic, cleaner styling)
-
-def show_comparison_dashboard(
-    report:    "ResourceReport",
-    save_path: str | None = None,
-    display:   bool = False,
-) -> None:
-    """
-    Bar-chart resource comparison across all available cases.
-
-    When Cases 4 & 5 are present (k-port switch), additional bars are shown.
-    No SWAP overhead - the k-port switch is reconfigurable; the constraint
-    is parallelism (how many operations fit in k ports per Tock).
-    """
-    has3 = report.tocks_case3 is not None
-    has4 = report.tocks_case4 is not None
-    has5 = report.tocks_case5 is not None
-    has_limited = has4 or has5
-
-    # Build case labels and colours
-    cases  = ["Case 1\n(MPP)", "Case 2\n(CZ)"]
-    colors = [_PALETTE[0], _PALETTE[1]]
-    if has3:
-        cases.append(f"Case 3\n(CZ, k={report.ancilla_k})")
-        colors.append(_PALETTE[2])
-    if has4:
-        k_str = report.switch_k or "?"
-        cases.append(f"Case 4\n(MPP, k={k_str})")
-        colors.append(_PALETTE[3])
-    if has5:
-        k_str = report.switch_k or "?"
-        cases.append(f"Case 5\n(CZ, k={k_str})")
-        colors.append(_PALETTE[4])
-
-    n_cases = len(cases)
-
-    # Figure layout
-    fig, axes = plt.subplots(1, 3, figsize=(max(14, n_cases * 3 + 4), 5),
-                             facecolor=_FIG_BG)
-
-    subtitle = f"{report.graph_type}(n={report.graph_nodes}), d={report.code_distance}"
-    if has_limited:
-        subtitle += f", switch k={report.switch_k}"
-    # fig.suptitle(
-    # f"Resource Comparison: {subtitle}",
-    # fontsize=_FS_SUPTITLE, fontweight="bold",
-    # )
-    def _panel(ax: plt.Axes, vals: list, case_labels: list,
-               case_colors: list, title: str,
-               ylabel: str, fmt: str = "{}") -> None:
-        n = len(vals)
-        bar_w = max(0.28, min(0.55, 2.0 / n))
-        x = np.arange(n)
-
-        bars = ax.bar(x, vals, color=case_colors, edgecolor="white",
-                      width=bar_w, zorder=2)
-        for bar, val in zip(bars, vals):
-            lbl = fmt.format(val) if isinstance(val, int) else str(val)
-            ax.text(bar.get_x() + bar.get_width() / 2,
-                    bar.get_height() * 1.03,
-                    lbl, ha="center", va="bottom",
-                    fontsize=_FS_BAR, fontweight="bold")
-
-        ax.set_title(title, fontsize=_FS_TITLE, fontweight="bold", pad=8)
-        ax.set_ylabel(ylabel, fontsize=_FS_AXIS)
-        ax.set_xticks(x)
-        ax.set_xticklabels(case_labels, fontsize=_FS_TICK)
-        ax.spines[["top", "right"]].set_visible(False)
-        ax.grid(axis="y", linestyle="--", alpha=_ALPHA_GRID, zorder=0)
-        ax.set_ylim(0, max(vals) * 1.35)
-
-    # Tock values
-    tock_vals = [report.tocks_case1, report.tocks_case2]
-    if has3:
-        tock_vals.append(report.tocks_case3)
-    if has4:
-        tock_vals.append(report.tocks_case4)
-    if has5:
-        tock_vals.append(report.tocks_case5)
-
-    # Ancilla values
-    anc_vals = [report.peak_ancilla_ELUs_case1, report.peak_ancilla_ELUs_case2]
-    if has3:
-        anc_vals.append(report.peak_ancilla_ELUs_case3)
-    if has4:
-        anc_vals.append(report.peak_ancilla_ELUs_case1)  # same ELU model
-    if has5:
-        anc_vals.append(report.peak_ancilla_ELUs_case2)
-
-    # Physical qubit values
-    phys_vals = [report.total_phys_qubits_case1, report.total_phys_qubits_case2]
-    if has3:
-        phys_vals.append(report.total_phys_qubits_case3)
-    if has4:
-        phys_vals.append(report.total_phys_qubits_case1)
-    if has5:
-        phys_vals.append(report.total_phys_qubits_case2)
-
-    # Draw panels
-    _panel(axes[0], tock_vals, cases, colors,
-           "Total Tocks\n(logical time steps)", "Tocks")
-    _panel(axes[1], anc_vals, cases, colors,
-           "Peak Ancilla QPUs\n(simultaneous demand)", "QPUs")
-    _panel(axes[2], phys_vals, cases, colors,
-           f"Total Physical Qubits\n(d={report.code_distance}, "
-           f"{report.phys_per_ELU}/QPU)",
-           "Physical qubits", fmt="{:,}")
-
-    plt.tight_layout()
-    _save_or_show(fig, save_path, "dashboard", display)
-
-
-# Shared save/show helper
-# Qubit Occupancy  (per-tock tile strip, restored from original notebook)
-
-def _draw_occupancy_tiles(
-    ax:       plt.Axes,
-    tock:     list,
-    mapping:  dict,
-    n_q:      int,
-    tock_idx: int,
-    palette:  list[str],
-    layout_free: bool = False,
-) -> None:
-    """
-    Draw the ancilla (top) and data (bottom) tile strips for one tock.
-    Idle tiles are light grey; active tiles are coloured per measurement.
-    """
-    ax.set_xlim(-0.6, n_q)
-    ax.set_ylim(-0.3, 2.8)
-    ax.set_aspect("equal")
-    ax.axis("off")
-    ax.set_title(f"Tock {tock_idx + 1} - Qubit Occupancy",
-                 fontsize=_FS_TITLE, fontweight="bold", pad=8)
-
-    # Row labels
-    ax.text(-0.3, 2.0, "Ancilla", ha="right", va="center",
-            fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
-    ax.text(-0.3, 0.5, "Data",    ha="right", va="center",
-            fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
-
-    # Idle tiles
-    for q in range(n_q):
-        for row_y, prefix in [(1.5, "A"), (0.0, "Q")]:
-            ax.add_patch(plt.Rectangle(
-                (q, row_y), 1, 1,
-                facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, linewidth=_LW_NORMAL,
-            ))
-            ax.text(q + 0.5, row_y + 0.5, f"{prefix}{q}",
-                    ha="center", va="center", fontsize=_FS_ANNOT, color=_COL_IDLE_TEXT)
-
-    # Active tiles: one colour per measurement in this tock
-    for bi, b in enumerate(tock):
-        col      = palette[bi % len(palette)]
-        involved = [mapping[b["id"]]] + [mapping[nb] for nb in b["neighbors"]]
-        ancilla_positions = (
-            [bi] if layout_free else range(b["L"], b["R"] + 1)
-        )
-
-        for q in ancilla_positions:
-            ax.add_patch(plt.Rectangle(
-                (q, 1.5), 1, 1,
-                facecolor=col, edgecolor="white", linewidth=_LW_THICK, alpha=_ALPHA_TILE,
-            ))
-            ax.text(q + 0.5, 2.0, f"A{q}",
-                    ha="center", va="center",
-                    fontsize=_FS_ANNOT, fontweight="bold", color="white")
-
-        for q in involved:  # data qubits
-            ax.add_patch(plt.Rectangle(
-                (q, 0.0), 1, 1,
-                facecolor=col, edgecolor="white", linewidth=_LW_THICK, alpha=_ALPHA_TILE,
-            ))
-            ax.text(q + 0.5, 0.5, f"Q{q}",
-                    ha="center", va="center",
-                    fontsize=_FS_ANNOT, fontweight="bold", color="white")
-
-
-def show_qubit_occupancy(
-    scheduler: "SubstrateScheduler",
-    save_path: str | None = None,
-    display:   bool = False,
-) -> None:
-    """
-    Per-tock qubit occupancy figure (Case 1 - MPP).
-
-    Each row in the figure is one Tock.  Left panel = graph view with
-    X/Z roles highlighted.  Right panel = the tile strip (ancilla row on top,
-    data row on bottom) showing exactly which physical substrate positions are
-    occupied.  Restored from the original notebook visualisation.
-    """
-    n_tocks = len(scheduler.schedule)
-    if n_tocks == 0:
-        print("  No tocks to display.")
-        return
-
-    n_q   = len(scheduler.G.nodes)
-    # Page-width canvas, compact rows
-    fig, axes = plt.subplots(
-        n_tocks, 2,
-        figsize=(6.3, 2.05 * n_tocks),
-        facecolor=_FIG_BG,
-        gridspec_kw={"width_ratios": [1, 1.4]},
-    )
-    # fig.suptitle("Qubit Occupancy per Tock  (Case 1: MPP)",
-    # fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01)
-    if n_tocks == 1:
-        axes = [axes]  # normalise to list of rows
-
-    pos = scheduler._get_pos()
-
-    for t, (row, tock) in enumerate(zip(axes, scheduler.schedule)):
-        ax_graph, ax_tiles = row
-
-        # Graph view
-        measured  = {b["id"] for b in tock}
-        neighbors = {nb for b in tock for nb in b["neighbors"]}
-
-        node_colors = [
-            _COL_MEASURE if nd in measured  else
-            _COL_NODE_NBR if nd in neighbors else
-            _COL_IDLE
-            for nd in scheduler.G.nodes
-        ]
-        active_edges = [
-            (b["id"], nb) if scheduler.G.has_edge(b["id"], nb) else (nb, b["id"])
-            for b in tock for nb in b["neighbors"]
-        ]
-        all_edges  = list(scheduler.G.edges())
-        inactive   = [e for e in all_edges
-                      if e not in active_edges
-                      and (e[1], e[0]) not in active_edges]
-
-        import networkx as nx
-        nx.draw_networkx_edges(scheduler.G, pos, edgelist=inactive,
-                               width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
-        nx.draw_networkx_edges(scheduler.G, pos, edgelist=active_edges,
-                               width=_LW_HEAVY, edge_color=_COL_NODE_MEAS, ax=ax_graph)
-        nx.draw_networkx_nodes(scheduler.G, pos,
-                               node_size=430, node_color=node_colors,
-                               edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
-                               ax=ax_graph)
-
-        labels = {
-            nd: (f"{nd}\nX" if nd in measured  else
-                 f"{nd}\nZ" if nd in neighbors else str(nd))
-            for nd in scheduler.G.nodes
-        }
-        nx.draw_networkx_labels(scheduler.G, pos, labels,
-                                font_size=_FS_NODE, font_color=_COL_TEXT_DARK, ax=ax_graph)
-
-        # operator string below the graph
-        op_strs = []
-        for b in tock:
-            parts = [f"X{scheduler.mapping[b['id']]}"] + \
-                    [f"Z{scheduler.mapping[nb]}" for nb in b["neighbors"]]
-            op_strs.append(" ⊗ ".join(parts))
-        ax_graph.text(0.5, 0.02, "  |  ".join(op_strs),
-                      transform=ax_graph.transAxes,
-                      ha="center", fontsize=_FS_ANNOT, family="monospace",
-                      color=_COL_TEXT_LIGHT, zorder=3)
-
-        if t == 0:
-            ax_graph.figure.legend(
-                handles=[
-                    mpatches.Patch(facecolor=_COL_MEASURE, edgecolor=_COL_BORDER,
-                                   lw=_LW_MEDIUM, label="X (measured)"),
-                    mpatches.Patch(facecolor=_COL_NODE_NBR, edgecolor=_COL_BORDER,
-                                   lw=_LW_MEDIUM, label="Z (neighbour)"),
-                ],
-                fontsize=_FS_LEGEND, frameon=False,
-                loc="upper left", bbox_to_anchor=(0.005, 1.0), ncol=1,
-            )
-        ax_graph.set_aspect("equal")
-        ax_graph.margins(0.14)
-        ax_graph.set_title(f"Tock {t + 1} - Graph View",
-                           fontsize=_FS_TITLE, fontweight="bold", pad=8)
-        ax_graph.axis("off")
-        ax_graph.margins(0.18)
-
-        # Tile strip
-        _draw_occupancy_tiles(
-            ax_tiles,
-            tock,
-            scheduler.mapping,
-            n_q,
-            t,
-            _PALETTE,
-            layout_free=getattr(scheduler, "layout_free", False),
-        )
-
-    plt.tight_layout()
-    _save_or_show(fig, save_path, "qubit occupancy", display)
-
-
-def show_qubit_occupancy_case3(
-    cz_k:      "CZSchedulerFixedAncilla",
-    save_path: str | None = None,
-    display:   bool = False,
-) -> None:
-    """
-    Per-tock qubit occupancy figure for Case 3 (CZ + k ancillas).
-
-    Each row is one Tock.  Left panel = graph view.  Right panel = tile strip.
-
-    Tile strip layout (n_q columns, one per data qubit):
-      Top row    - ancilla QPU: drawn ONLY above the data qubit it is docked
-                   with this tock.  Idle slots show a faint dashed outline.
-      Bottom row - data qubits: always present; highlighted when active.
-      Connector  - a short vertical line links each active (ancilla, qubit) pair
-                   so it is visually clear which ancilla is touching which qubit.
-
-    This makes the ancilla "repositioning" between Step 1 and Step 2 directly
-    visible: in Step 1 ancilla Aᵢ sits above Qᵤ; in Step 2 it moves to Qᵥ.
-    """
-    G        = cz_k.G
-    n_q      = len(G.nodes)
-    n_tocks  = cz_k.n_tocks()
-    if n_tocks == 0:
-        print("  No tocks to display.")
-        return
-
-    nodes_list  = list(G.nodes)
-    node_to_col = {nd: i for i, nd in enumerate(nodes_list)}
-
-    palette = _PALETTE
-    k       = cz_k.k
-
-    strip_w = max(8, min(n_q * 0.60 + 3, 30))
-    fig, axes = plt.subplots(
-        n_tocks, 2,
-        figsize=(strip_w + 7, 5.5 * n_tocks),
-        facecolor=_FIG_BG,
-        gridspec_kw={"width_ratios": [1, max(1, n_q // 6)]},
-    )
-    fig.suptitle(
-        f"Qubit Occupancy per Tock  (Case 3 - CZ, k={k} ancilla(s))",
-        fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
-    )
-
-    if n_tocks == 1:
-        axes = [axes]
-
-    pos = cz_k._get_pos()
-
-    import networkx as nx_local
-
-    for t in range(n_tocks):
-        ax_graph, ax_tiles = axes[t]
-        batch_idx = t // 2
-        step      = t % 2  # 0 = Step 1  (measure Z_u⊗Z_anc)
-                              # 1 = Step 2  (measure Z_v⊗Z_anc)
-        batch     = cz_k.batches[batch_idx]
-        col       = palette[batch_idx % len(palette)]
-
-        active_step1 = {u for u, v in batch}
-        active_step2 = {v for u, v in batch}
-        active_now   = active_step1 if step == 0 else active_step2
-        active_other = active_step2 if step == 0 else active_step1
-
-        # Graph view
-        node_colors = [
-            _COL_NODE_ACTIVE if nd in active_now   else
-            _COL_NODE_OTHER  if nd in active_other else
-            _COL_IDLE
-            for nd in G.nodes
-        ]
-        batch_edge_set = {(min(u, v), max(u, v)) for u, v in batch}
-        active_edges   = [(u, v) for u, v in G.edges()
-                          if (min(u,v), max(u,v)) in batch_edge_set]
-        inactive_edges = [(u, v) for u, v in G.edges()
-                          if (min(u,v), max(u,v)) not in batch_edge_set]
-
-        nx_local.draw_networkx_edges(G, pos, edgelist=inactive_edges,
-                                     width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
-        nx_local.draw_networkx_edges(G, pos, edgelist=active_edges,
-                                     width=_LW_HEAVY, edge_color=col, ax=ax_graph)
-        nx_local.draw_networkx_nodes(G, pos,
-                                     node_size=700, node_color=node_colors,
-                                     edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
-                                     ax=ax_graph)
-        step_lbl = "Z_u⊗Z_anc" if step == 0 else "Z_v⊗Z_anc"
-        labels = {
-            nd: (f"{nd}\n{step_lbl}" if nd in active_now else str(nd))
-            for nd in G.nodes
-        }
-        nx_local.draw_networkx_labels(G, pos, labels,
-                                      font_size=_FS_ANNOT, font_color=_COL_TEXT_DARK, ax=ax_graph)
-
-        op_parts = [
-            f"Z_{u if step==0 else v}⊗Z_anc{i}"
-            for i, (u, v) in enumerate(batch)
-        ]
-        ax_graph.text(0.5, 0.02, "  |  ".join(op_parts),
-                      transform=ax_graph.transAxes,
-                      ha="center", fontsize=_FS_ANNOT, family="monospace",
-                      color=_COL_TEXT_LIGHT, zorder=3)
-
-        ax_graph.legend(
-            handles=[
-                mpatches.Patch(facecolor=_COL_NODE_ACTIVE, edgecolor=_COL_BORDER,
-                               lw=_LW_MEDIUM, label="Active this tock"),
-                mpatches.Patch(facecolor=_COL_NODE_OTHER, edgecolor=_COL_BORDER,
-                               lw=_LW_MEDIUM, label="Other CZ endpoint"),
-            ],
-            fontsize=_FS_LEGEND, frameon=False, loc="upper right",
-        )
-        step_name = "Step 1 (Z_u⊗Z_anc)" if step == 0 else "Step 2 (Z_v⊗Z_anc)"
-        ax_graph.set_title(f"Tock {t+1} - Sub-batch {batch_idx+1}, {step_name}",
-                           fontsize=_FS_TITLE, fontweight="bold", pad=8)
-        ax_graph.axis("off")
-        ax_graph.margins(0.18)
-
-        # Tile strip
-        # n_q columns: one per data qubit.
-        # Top row  (y=1.5..2.5): ancilla QPU docked HERE if active this tock.
-        # Bottom row (y=0..1)  : data qubit tile (always present).
-        # Active pair shares a color; a connector line links them.
-        # Idle ancilla slots above inactive qubits show a faint dashed border.
-
-        # Build: node -> (ancilla_index, tile_color)
-        active_map: dict = {}
-        for i, (u, v) in enumerate(batch):
-            qubit = u if step == 0 else v
-            active_map[qubit] = (i, palette[i % len(palette)])
-
-        n_active = len(active_map)
-
-        ax_tiles.set_xlim(-0.6, n_q + 0.2)
-        ax_tiles.set_ylim(-0.3, 2.8)
-        ax_tiles.set_aspect("equal")
-        ax_tiles.axis("off")
-        ax_tiles.set_title(
-            f"Tock {t+1} - Tile Occupancy  "
-            f"({n_active} / {k} ancilla QPU(s) docked)",
-            fontsize=_FS_TITLE, fontweight="bold", pad=8,
-        )
-
-        ax_tiles.text(-0.3, 2.0, "Ancilla", ha="right", va="center",
-                      fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
-        ax_tiles.text(-0.3, 0.5, "Data",    ha="right", va="center",
-                      fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
-
-        for qi, nd in enumerate(nodes_list):
-            if nd in active_map:
-                ai, tile_col = active_map[nd]
-
-                # Data qubit tile: active (colored)
-                ax_tiles.add_patch(plt.Rectangle(
-                    (qi, 0.0), 1, 1,
-                    facecolor=tile_col, edgecolor="white",
-                    linewidth=_LW_THICK, alpha=_ALPHA_TILE, zorder=2,
-                ))
-                ax_tiles.text(qi + 0.5, 0.5, f"Q{nd}",
-                              ha="center", va="center",
-                              fontsize=_FS_ANNOT, fontweight="bold", color="white", zorder=3)
-
-                # Ancilla tile: docked directly above (same column, same color)
-                ax_tiles.add_patch(plt.Rectangle(
-                    (qi, 1.5), 1, 1,
-                    facecolor=tile_col, edgecolor="white",
-                    linewidth=_LW_THICK, alpha=_ALPHA_TILE, zorder=2,
-                ))
-                ax_tiles.text(qi + 0.5, 2.0, f"A{ai}",
-                              ha="center", va="center",
-                              fontsize=_FS_ANNOT, fontweight="bold", color="white", zorder=3)
-
-                # Connector: short vertical line linking the two tiles
-                ax_tiles.plot([qi + 0.5, qi + 0.5], [1.0, 1.5],
-                              color=tile_col, linewidth=_LW_HEAVY, alpha=_ALPHA_EMPTY,
-                              solid_capstyle="round", zorder=1)
-
-            else:
-                # Data qubit tile: idle (grey)
-                ax_tiles.add_patch(plt.Rectangle(
-                    (qi, 0.0), 1, 1,
-                    facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, linewidth=_LW_NORMAL,
-                ))
-                ax_tiles.text(qi + 0.5, 0.5, f"Q{nd}",
-                              ha="center", va="center", fontsize=_FS_TICK_SM, color=_COL_IDLE_TEXT)
-
-                # Ancilla slot above: faint dashed outline (no ancilla here)
-                ax_tiles.add_patch(plt.Rectangle(
-                    (qi, 1.5), 1, 1,
-                    facecolor=_COL_EMPTY_FILL, edgecolor=_COL_EMPTY_EDGE,
-                    linewidth=_LW_THIN, linestyle="--",
-                ))
-
-    plt.tight_layout()
-    _save_or_show(fig, save_path, "Case 3 qubit occupancy", display)
-
-
-def show_qubit_occupancy_case2(
-    cz:        "CZScheduler",
-    save_path: str | None = None,
-    display:   bool = False,
-) -> None:
-    """
-    Per-tock qubit occupancy figure for Case 2 (CZ gates, unlimited ancillas).
-
-    Layout is identical to Case 3: n_q columns, one per data qubit.
-      Top row    - ancilla ELU drawn above the data qubit it is interacting with.
-      Bottom row - data qubit tile, always present; highlighted when active.
-      Connector  - vertical line linking each active (ancilla, qubit) pair.
-
-    Since ancillas are unlimited in Case 2, every CZ gate in a round runs in
-    parallel - the ancilla count per tock equals the number of edges in that
-    colour class.
-    """
-    G       = cz.G
-    n_q     = len(G.nodes)
-    n_rounds = cz.chromatic_index
-    n_tocks  = 2 * n_rounds
-    if n_tocks == 0:
-        print("  No tocks to display.")
-        return
-
-    nodes_list  = list(G.nodes)
-    palette     = _PALETTE
-
-    strip_w = max(8, min(n_q * 0.60 + 3, 30))
-    fig, axes = plt.subplots(
-        n_tocks, 2,
-        figsize=(strip_w + 7, 5.5 * n_tocks),
-        facecolor=_FIG_BG,
-        gridspec_kw={"width_ratios": [1, max(1, n_q // 6)]},
-    )
-    # fig.suptitle(
-    # "Qubit Occupancy per Tock  (Case 2: CZ, unlimited ancillas)",
-    # fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
-    # )
-    if n_tocks == 1:
-        axes = [axes]
-
-    pos = cz._get_pos()
-
-    import networkx as nx_local
-
-    for t in range(n_tocks):
-        ax_graph, ax_tiles = axes[t]
-        round_idx = t // 2
-        step      = t % 2  # 0 = Step 1 (Z_u⊗Z_anc), 1 = Step 2 (Z_v⊗Z_anc)
-        round_edges = cz.cz_rounds[round_idx]
-        round_col   = palette[round_idx % len(palette)]
-
-        active_step1 = {u for u, v in round_edges}
-        active_step2 = {v for u, v in round_edges}
-        active_now   = active_step1 if step == 0 else active_step2
-        active_other = active_step2 if step == 0 else active_step1
-
-        # Graph view
-        node_colors = [
-            _COL_NODE_ACTIVE if nd in active_now   else
-            _COL_NODE_OTHER  if nd in active_other else
-            _COL_IDLE
-            for nd in G.nodes
-        ]
-        round_edge_set = {(min(u, v), max(u, v)) for u, v in round_edges}
-        active_edges   = [(u, v) for u, v in G.edges()
-                          if (min(u, v), max(u, v)) in round_edge_set]
-        inactive_edges = [(u, v) for u, v in G.edges()
-                          if (min(u, v), max(u, v)) not in round_edge_set]
-
-        nx_local.draw_networkx_edges(G, pos, edgelist=inactive_edges,
-                                     width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
-        nx_local.draw_networkx_edges(G, pos, edgelist=active_edges,
-                                     width=_LW_HEAVY, edge_color=round_col, ax=ax_graph)
-        nx_local.draw_networkx_nodes(G, pos,
-                                     node_size=700, node_color=node_colors,
-                                     edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
-                                     ax=ax_graph)
-        step_lbl = "Z_u⊗Z_anc" if step == 0 else "Z_v⊗Z_anc"
-        labels = {
-            nd: (f"{nd}\n{step_lbl}" if nd in active_now else str(nd))
-            for nd in G.nodes
-        }
-        nx_local.draw_networkx_labels(G, pos, labels,
-                                      font_size=_FS_ANNOT, font_color=_COL_TEXT_DARK, ax=ax_graph)
-
-        op_parts = [
-            f"Z_{u if step == 0 else v}⊗Z_anc{i}"
-            for i, (u, v) in enumerate(round_edges)
-        ]
-        ax_graph.text(0.5, 0.02, "  |  ".join(op_parts),
-                      transform=ax_graph.transAxes,
-                      ha="center", fontsize=_FS_ANNOT, family="monospace",
-                      color=_COL_TEXT_LIGHT, zorder=3)
-
-        ax_graph.legend(
-            handles=[
-                mpatches.Patch(facecolor=_COL_NODE_ACTIVE, edgecolor=_COL_BORDER,
-                               lw=_LW_MEDIUM, label="Active this tock"),
-                mpatches.Patch(facecolor=_COL_NODE_OTHER, edgecolor=_COL_BORDER,
-                               lw=_LW_MEDIUM, label="Other CZ endpoint"),
-            ],
-            fontsize=_FS_LEGEND, frameon=False, loc="upper right",
-        )
-        step_name = "Step 1 (Z_u⊗Z_anc)" if step == 0 else "Step 2 (Z_v⊗Z_anc)"
-        ax_graph.set_title(
-            f"Tock {t + 1} - CZ Round {round_idx + 1}, {step_name}",
-            fontsize=_FS_TITLE, fontweight="bold", pad=8,
-        )
-        ax_graph.axis("off")
-        ax_graph.margins(0.18)
-
-        # Tile strip
-        # Build: node -> (ancilla_index, tile_color) for qubits active this tock
-        active_map: dict = {}
-        for i, (u, v) in enumerate(round_edges):
-            qubit = u if step == 0 else v
-            active_map[qubit] = (i, palette[i % len(palette)])
-
-        n_active = len(active_map)
-
-        ax_tiles.set_xlim(-0.6, n_q + 0.2)
-        ax_tiles.set_ylim(-0.3, 2.8)
-        ax_tiles.set_aspect("equal")
-        ax_tiles.axis("off")
-        ax_tiles.set_title(
-            f"Tock {t + 1} - Tile Occupancy  "
-            f"({n_active} ancilla QPU(s) docked)",
-            fontsize=_FS_TITLE, fontweight="bold", pad=8,
-        )
-
-        ax_tiles.text(-0.3, 2.0, "Ancilla", ha="right", va="center",
-                      fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
-        ax_tiles.text(-0.3, 0.5, "Data",    ha="right", va="center",
-                      fontsize=_FS_ROW, color=_COL_TEXT_MED, fontweight="bold")
-
-        for qi, nd in enumerate(nodes_list):
-            if nd in active_map:
-                ai, tile_col = active_map[nd]
-
-                ax_tiles.add_patch(plt.Rectangle(
-                    (qi, 0.0), 1, 1,
-                    facecolor=tile_col, edgecolor="white",
-                    linewidth=_LW_THICK, alpha=_ALPHA_TILE, zorder=2,
-                ))
-                ax_tiles.text(qi + 0.5, 0.5, f"Q{nd}",
-                              ha="center", va="center",
-                              fontsize=_FS_ANNOT, fontweight="bold", color="white", zorder=3)
-
-                ax_tiles.add_patch(plt.Rectangle(
-                    (qi, 1.5), 1, 1,
-                    facecolor=tile_col, edgecolor="white",
-                    linewidth=_LW_THICK, alpha=_ALPHA_TILE, zorder=2,
-                ))
-                ax_tiles.text(qi + 0.5, 2.0, f"A{ai}",
-                              ha="center", va="center",
-                              fontsize=_FS_ANNOT, fontweight="bold", color="white", zorder=3)
-
-                ax_tiles.plot([qi + 0.5, qi + 0.5], [1.0, 1.5],
-                              color=tile_col, linewidth=_LW_HEAVY, alpha=_ALPHA_EMPTY,
-                              solid_capstyle="round", zorder=1)
-            else:
-                ax_tiles.add_patch(plt.Rectangle(
-                    (qi, 0.0), 1, 1,
-                    facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, linewidth=_LW_NORMAL,
-                ))
-                ax_tiles.text(qi + 0.5, 0.5, f"Q{nd}",
-                              ha="center", va="center", fontsize=_FS_TICK_SM, color=_COL_IDLE_TEXT)
-
-                ax_tiles.add_patch(plt.Rectangle(
-                    (qi, 1.5), 1, 1,
-                    facecolor=_COL_EMPTY_FILL, edgecolor=_COL_EMPTY_EDGE,
-                    linewidth=_LW_THIN, linestyle="--",
-                ))
-
-    plt.tight_layout()
-    _save_or_show(fig, save_path, "Case 2 qubit occupancy", display)
-
-
-# Port Utilization Chart (Cases 4 & 5: k-port switch)
-
-def show_port_utilization(
-    mpp_lim: "MPPSchedulerLimited | None" = None,
-    cz_lim:  "CZSchedulerLimited | None" = None,
-    save_path: str | None = None,
-    display:   bool = False,
-) -> None:
-    """Bar chart showing switch port utilization per group/batch.
-
-    Left panel  - Case 4 (MPP): each bar = one scheduled group
-    Right panel - Case 5 (CZ):  each bar = one sub-batch
-    Bar height = ports used; dashed line = k (max ports available).
-    """
-    panels = []
-    if mpp_lim is not None and mpp_lim.scheduled_groups:
-        panels.append(("Case 4 - MPP (k-port)", mpp_lim.scheduled_groups,
-                        mpp_lim.switch.k, "Group", "mpp"))
-    if cz_lim is not None and cz_lim.scheduled_batches:
-        panels.append(("Case 5 - CZ (k-port)", cz_lim.scheduled_batches,
-                        cz_lim.switch.k, "Sub-batch", "cz"))
-    if not panels:
-        return
-
-    n_panels = len(panels)
-    fig, axes = plt.subplots(1, n_panels, figsize=(8 * n_panels, 5),
-                             facecolor=_FIG_BG, squeeze=False)
-    # fig.suptitle("Switch Port Utilization per Tock Group / Sub-batch",
-    # fontsize=_FS_SUPTITLE, fontweight="bold")
-    for idx, (title, schedule, k, xlabel, mode) in enumerate(panels):
-        ax = axes[0][idx]
-        n = len(schedule)
-        x = np.arange(n)
-
-        ports_used = [item.n_ports_used for item in schedule]
-        util_pct = [p / k * 100 for p in ports_used]
-
-        # Case colours fixed chapter-wide: Case 4 (MPP) plum, Case 5 (CZ) light navy
-        bars = ax.bar(x, ports_used, color="#7FA6CE" if mode == "cz" else "#9C5A8C",
-                      edgecolor="white", zorder=2, alpha=_ALPHA_BAR)
-        ax.axhline(k, color="#5A6473", linewidth=_LW_HEAVY, linestyle="--",
-                   label=f"k = {k} (max ports)", zorder=3)
-
-        # Label each bar with port count
-        for bar, pu, pct in zip(bars, ports_used, util_pct):
-            ax.text(bar.get_x() + bar.get_width() / 2,
-                    bar.get_height() + 0.2,
-                    f"{pu}", ha="center", va="bottom",
-                    fontsize=_FS_BAR, fontweight="bold")
-
-        ax.set_xlabel(xlabel, fontsize=_FS_AXIS)
-        ax.set_ylabel("Ports Used", fontsize=_FS_AXIS)
-        ax.set_title(title, fontsize=_FS_TITLE, fontweight="bold", pad=8)
-        _smart_ticks(ax, n, "x", [str(i + 1) for i in range(n)], fontsize=_FS_TICK)
-        ax.spines[["top", "right"]].set_visible(False)
-        ax.grid(axis="y", linestyle="--", alpha=_ALPHA_GRID, zorder=0)
-        ax.legend(fontsize=_FS_LEGEND, frameon=True, framealpha=_ALPHA_LEGEND, loc="upper right")
-        ax.set_ylim(0, k * 1.3)
-
-        # Avg utilization annotation
-        avg_util = sum(util_pct) / len(util_pct) if util_pct else 0
-        ax.text(0.02, 0.95,
-                f"Avg utilization: {avg_util:.0f}%  "
-                f"({n} {'groups' if mode == 'mpp' else 'batches'}, "
-                f"{sum(s.tocks for s in schedule)} Tocks)",
-                transform=ax.transAxes, fontsize=_FS_LEGEND, va="top",
-                color=_COL_TEXT_GRID, fontstyle="italic")
-
-    plt.tight_layout()
-    _save_or_show(fig, save_path, "port utilization chart", display)
-
-
-# Heatmap for Cases 4 & 5 (k-port switch)
-
-def _build_heatmap_case5_kport(cz_lim: "CZSchedulerLimited") -> tuple[np.ndarray, list[str]]:
-    """Matrix[qubit_row, tock] for Case 5 k-port model.
-
-    0 = idle, 1 = CZ step 1, 2 = CZ step 2.
-    Each sub-batch = 2 Tocks (step 1 + step 2).
-    """
-    G = cz_lim.G
-    nds = list(G.nodes)
-    ntr = {n: i for i, n in enumerate(nds)}
-    total_tocks = cz_lim.n_tocks()
-    m = np.zeros((len(nds), total_tocks), dtype=np.int8)
-    x_labels = []
-
-    for bi, sb in enumerate(cz_lim.scheduled_batches):
-        t1 = 2 * bi
-        t2 = 2 * bi + 1
-        for u, v in sb.edges:
-            m[ntr[u], t1] = 1
-            m[ntr[v], t2] = 2
-        x_labels.extend([f"B{bi+1}.1", f"B{bi+1}.2"])
-
-    return m, x_labels
-
-
-def _build_heatmap_case4_kport(mpp_lim: "MPPSchedulerLimited") -> tuple[np.ndarray, list[str]]:
-    """Matrix[qubit_row, tock] for Case 4 k-port model.
-
-    0 = idle, 1 = MPP measured (X), 2 = MPP neighbour (Z).
-    Each group = 1 Tock.
-    """
-    G = mpp_lim.G
-    nds = list(G.nodes)
-    ntr = {n: i for i, n in enumerate(nds)}
-    total_tocks = mpp_lim.n_tocks()
-    m = np.zeros((len(nds), total_tocks), dtype=np.int8)
-    x_labels = []
-
-    for gi, sg in enumerate(mpp_lim.scheduled_groups):
-        for meas in sg.measurements:
-            m[ntr[meas["id"]], gi] = 2  # X-measured
-            for nb in meas["neighbors"]:
-                if m[ntr[nb], gi] == 0:
-                    m[ntr[nb], gi] = 1  # Z-neighbour
-        x_labels.append(f"G{gi+1}")
-
-    return m, x_labels
-
-
-def show_heatmaps_limited(
-    mpp_lim: "MPPSchedulerLimited | None" = None,
-    cz_lim:  "CZSchedulerLimited | None" = None,
-    save_path: str | None = None,
-    display:   bool = False,
-) -> None:
-    """Schedule heatmaps for Cases 4 and/or 5 (k-port switch).
-
-    Rows = logical qubits.
-    Columns = Tocks.
-    Colour = role: idle / active.
-    """
-    panels = []
-    if mpp_lim is not None and mpp_lim.scheduled_groups:
-        mat4, xlbl4 = _build_heatmap_case4_kport(mpp_lim)
-        panels.append((mat4, xlbl4, "Case 4 - MPP (k-port switch)", "c4"))
-    if cz_lim is not None and cz_lim.scheduled_batches:
-        mat5, xlbl5 = _build_heatmap_case5_kport(cz_lim)
-        panels.append((mat5, xlbl5, "Case 5 - CZ (k-port switch)", "c5"))
-    if not panels:
-        return
-
-    n_panels = len(panels)
-    n_q = max(m.shape[0] for m, _, _, _ in panels)
-    height = max(5, min(n_q * 0.25 + 3, 18))
-    total_cols = sum(m.shape[1] for m, _, _, _ in panels)
-    fig_w = max(12, total_cols * 0.4 + 6)
-
-    fig, axes = plt.subplots(1, n_panels, figsize=(fig_w, height),
-                             facecolor=_FIG_BG, squeeze=False)
-
-    k_str = ""
-    if mpp_lim is not None:
-        k_str = f"k={mpp_lim.switch.k}"
-    elif cz_lim is not None:
-        k_str = f"k={cz_lim.switch.k}"
-    # fig.suptitle(f"Schedule Heatmaps: k-Port Switch ({k_str})",
-    # fontsize=_FS_SUPTITLE, fontweight="bold")
-    # Case 4: white | light blue (Z-neighbour) | deep blue (X-measured)
-    cmap4 = ListedColormap([_COL_IDLE, _COL_HM_MPP_LIGHT, _COL_HM_MPP_DARK])
-    legend4 = [
-        mpatches.Patch(facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, label="Idle"),
-        mpatches.Patch(facecolor=_COL_HM_MPP_LIGHT, label="Z-neighbour"),
-        mpatches.Patch(facecolor=_COL_HM_MPP_DARK, label="X-measured"),
-    ]
-    # Case 5: white | amber (CZ step 1) | deep orange (CZ step 2)
-    cmap5 = ListedColormap([_COL_IDLE, _COL_HM_CZ_LIGHT, _COL_HM_CZ_DARK])
-    legend5 = [
-        mpatches.Patch(facecolor=_COL_IDLE, edgecolor=_COL_IDLE_EDGE, label="Idle"),
-        mpatches.Patch(facecolor=_COL_HM_CZ_LIGHT, label="CZ Step 1 (Z_u)"),
-        mpatches.Patch(facecolor=_COL_HM_CZ_DARK, label="CZ Step 2 (Z_v)"),
-    ]
-
-    for idx, (mat, xlbl, title, mode) in enumerate(panels):
-        ax = axes[0][idx]
-        cmap = cmap4 if mode == "c4" else cmap5
-        legend = legend4 if mode == "c4" else legend5
-        sched = mpp_lim if mode == "c4" else cz_lim
-        nds = list(sched.G.nodes)
-        y_lbl = [f"Q{nd}" for nd in nds]
-
-        plot_heatmap(mat, xlbl, y_lbl, title, cmap, legend, ax,
-                     vline_every=2 if mode == "c5" else 0)
-
-    plt.tight_layout(rect=[0, 0.06, 1, 1])
-    _save_or_show(fig, save_path, "k-port heatmap", display)
-
-
-# Per-Tock Occupancy: Case 4 (MPP + k-port switch)
-
-def _draw_switch_diagram(
-    ax: plt.Axes,
-    *,
-    # Data ELU info
-    nodes_list: list,
-    n_q: int,
-    data_active: set,  # nodes actively connected this tock
-    data_other: set,  # nodes involved but not active this tock (Case 5 step)
-    data_measured: set,  # X-measured nodes (Case 4): empty for Case 5
-    data_neighbor: set,  # Z-neighbour nodes (Case 4): empty for Case 5
-    # Switch info
-    k: int,
-    n_sw: int,
-    sw_data_nodes: list[list],  # per-switch: which data nodes connect
-    sw_anc_count: list[int],  # per-switch: how many ancillas connect
-    # Title
-    title: str,
-    is_case4: bool = False,
-) -> None:
-    """
-    Shared switch diagram renderer for Cases 4 and 5.
-
-    Layout: Data QPUs (top) -> Switch(es) side-by-side (middle, single row
-    of k ports each) -> Ancilla QPUs (bottom).
-
-    Each switch has k generic ports. Data and ancilla ELUs connect to any
-    port - they are NOT pre-split into data/ancilla rows.
-    """
-    _SW_COLORS = _SW_COLORS_LIGHT if is_case4 else _SW_COLORS_DARK
-
-    port_w = 0.5
-    port_sp = 0.7  # port spacing
-    sw_box_w = k * port_sp + 0.4
-    sw_gap = 1.5
-    total_sw_w = n_sw * sw_box_w + (n_sw - 1) * sw_gap
-
-    max_x = max(n_q + 1, total_sw_w + 1)
-
-    # Y coordinates
-    data_y = 4.0
-    sw_y = 1.8  # single port row centre
-    anc_y = -0.5
-
-    ax.set_xlim(-1, max_x + 0.5)
-    ax.set_ylim(anc_y - 1.2, data_y + 1.2)
-    ax.set_aspect("equal")
-    ax.axis("off")
-    ax.set_title(title, fontsize=_FS_TITLE, fontweight="bold", pad=8)
-
-    # DATA ELUs (top row): all n_q shown
-    data_x_start = (max_x - n_q) / 2
-    data_positions = {}
-    for qi, nd in enumerate(nodes_list):
-        x = data_x_start + qi
-        if is_case4:
-            if nd in data_measured:
-                fc, ec = _COL_MEASURE, _COL_NODE_MEAS
-            elif nd in data_neighbor:
-                fc, ec = _COL_NODE_NBR, _COL_NODE_NBR_EC
-            else:
-                fc, ec = _COL_IDLE, _COL_EMPTY_EDGE
-            tc = "white" if nd in data_measured else (
-                 _COL_TEXT_DARK if nd in data_neighbor else _COL_TEXT_ON_DARK)
-            role = "X" if nd in data_measured else (
-                   "Z" if nd in data_neighbor else "")
-            lbl = f"Q{nd}" + (f"\n{role}" if role else "")
-        else:
-            is_active = nd in data_active
-            is_other = nd in data_other
-            if is_active:
-                fc, ec = _COL_NODE_ACTIVE, _COL_NODE_ACT_EC
-            elif is_other:
-                fc, ec = _COL_NODE_OTHER, _COL_NODE_OTH_EC
-            else:
-                fc, ec = _COL_IDLE, _COL_EMPTY_EDGE
-            tc = _COL_TEXT_DARK if is_active else (_COL_TEXT_MED if is_other else _COL_TEXT_ON_DARK)
-            lbl = f"Q{nd}"
-        ax.add_patch(plt.Rectangle(
-            (x, data_y - 0.35), 0.8, 0.7,
-            facecolor=fc, edgecolor=ec, linewidth=1.5, zorder=2,
-        ))
-        ax.text(x + 0.4, data_y, lbl, ha="center", va="center",
-                fontsize=_FS_TICK_SM, fontweight="bold", color=tc, zorder=3)
-        if nd in data_active:
-            data_positions[nd] = x + 0.4
-
-    ax.text(data_x_start + n_q / 2, data_y + 0.6, "Data QPUs",
-            ha="center", fontsize=_FS_ANNOT, color=_COL_TEXT_LIGHT, fontweight="bold")
-
-    # ANCILLA ELUs (bottom row): show only active ones
-    total_anc = sum(sw_anc_count)
-    anc_x_start = (max_x - total_anc) / 2 if total_anc > 0 else max_x / 2
-    anc_positions = {}
-    anc_sw_map = {}  # anc_idx -> switch_idx
-    ai = 0
-    for si in range(n_sw):
-        for _ in range(sw_anc_count[si]):
-            anc_sw_map[ai] = si
-            ai += 1
-
-    for ai_idx in range(total_anc):
-        x = anc_x_start + ai_idx
-        sw_c = _SW_COLORS[anc_sw_map[ai_idx] % len(_SW_COLORS)]
-        fc = _COL_MIS if is_case4 else _COL_NODE_ACTIVE
-        ec = sw_c
-        ax.add_patch(plt.Rectangle(
-            (x, anc_y - 0.35), 0.8, 0.7,
-            facecolor=fc, edgecolor=ec, linewidth=_LW_THICK, zorder=2,
-        ))
-        tc = _COL_TEXT_DARK if is_case4 else _COL_TEXT_DARK
-        ax.text(x + 0.4, anc_y, f"A{ai_idx}", ha="center", va="center",
-                fontsize=_FS_TICK_SM, fontweight="bold", color=tc, zorder=3)
-        anc_positions[ai_idx] = x + 0.4
-
-    if total_anc > 0:
-        ax.text(anc_x_start + total_anc / 2, anc_y - 0.7, "Ancilla QPUs",
-                ha="center", fontsize=_FS_ANNOT,
-                color=_SW_COLORS_DARK[2] if is_case4 else _SW_COLORS_DARK[0], fontweight="bold")
-
-    # SWITCH boxes (middle, side-by-side, single row of k ports)
-    sw_row_x_start = (max_x - total_sw_w) / 2
-
-    for si in range(n_sw):
-        sw_color = _SW_COLORS[si % len(_SW_COLORS)]
-        sw_color_bg = sw_color + "15"
-
-        box_x = sw_row_x_start + si * (sw_box_w + sw_gap)
-        sw_box_y0 = sw_y - 0.5
-        sw_box_h = 1.0
-
-        # Switch box background
-        ax.add_patch(mpatches.FancyBboxPatch(
-            (box_x, sw_box_y0), sw_box_w, sw_box_h,
-            boxstyle="round,pad=0.1",
-            facecolor=sw_color_bg, edgecolor=sw_color,
-            linewidth=_LW_HEAVY, zorder=1,
-        ))
-
-        n_data_sw = len(sw_data_nodes[si])
-        n_anc_sw = sw_anc_count[si]
-        ports_used = n_data_sw + n_anc_sw
-        label_text = (f"SWITCH {si+1}  (k={k}, {ports_used}/{k} ports)"
-                      if n_sw > 1
-                      else f"k-PORT SWITCH  (k={k}, {ports_used}/{k} ports)")
-        ax.text(box_x + sw_box_w / 2, sw_box_y0 - 0.3, label_text,
-                ha="center", fontsize=_FS_TICK_SM, fontweight="bold", color=sw_color)
-
-        # Draw k ports in a single row: first n_data_sw are data, next n_anc_sw are ancilla
-        for pi in range(k):
-            px = box_x + 0.2 + pi * port_sp
-            if pi < n_data_sw:
-                # Data port
-                fc = sw_color + "55"
-                ec = sw_color
-                plbl = "D"
-            elif pi < n_data_sw + n_anc_sw:
-                # Ancilla port
-                fc = f"{_COL_MIS}88" if is_case4 else f"{_COL_NODE_ACTIVE}88"
-                ec = sw_color
-                plbl = "A"
-            else:
-                # Empty port
-                fc = _COL_IDLE
-                ec = _COL_IDLE_EDGE
-                plbl = ""
-            ax.add_patch(plt.Rectangle(
-                (px, sw_y - 0.2), port_w, 0.4,
-                facecolor=fc, edgecolor=ec, linewidth=_LW_NORMAL, zorder=2,
-            ))
-            if plbl:
-                ax.text(px + port_w / 2, sw_y, plbl, ha="center", va="center",
-                        fontsize=_FS_ANNOT_SM, color=sw_color, fontweight="bold", zorder=3)
-
-        # Lines: data ELU -> data port
-        data_sorted = sorted(sw_data_nodes[si])
-        for pi, nd in enumerate(data_sorted):
-            if nd not in data_positions:
-                continue
-            ex = data_positions[nd]
-            px = box_x + 0.2 + pi * port_sp + port_w / 2
-            lc = _COL_NODE_MEAS if nd in data_measured else (
-                 _COL_NODE_NBR_EC if nd in data_neighbor else _COL_NODE_ACT_EC)
-            ax.plot([ex, px], [data_y - 0.35, sw_y + 0.2],
-                    color=lc, linewidth=_LW_THICK, alpha=0.6, zorder=0)
-
-        # Lines: ancilla port -> ancilla ELU
-        anc_gi_start = sum(sw_anc_count[:si])
-        for ai_off in range(n_anc_sw):
-            anc_gi = anc_gi_start + ai_off
-            if anc_gi not in anc_positions:
-                continue
-            ax_pos = anc_positions[anc_gi]
-            px = box_x + 0.2 + (n_data_sw + ai_off) * port_sp + port_w / 2
-            ax.plot([px, ax_pos], [sw_y - 0.2, anc_y + 0.35],
-                    color=sw_color, linewidth=_LW_THICK, alpha=0.5,
-                    linestyle="--", zorder=0)
-
-
-def show_qubit_occupancy_case4(
-    mpp_lim: "MPPSchedulerLimited",
-    save_path: str | None = None,
-    display:   bool = False,
-) -> None:
-    """Per-Tock occupancy for Case 4 - MPP with k-port switch(es)."""
-    import networkx as nx_local
-
-    G = mpp_lim.G
-    n_q = len(G.nodes)
-    groups = mpp_lim.scheduled_groups
-    n_tocks = len(groups)
-    if n_tocks == 0:
-        return
-
-    nodes_list = list(G.nodes)
-    k = mpp_lim.switch.k
-    n_sw = mpp_lim.switch.n_switches
-
-    half_k = k // 2
-    port_sp = 0.7
-    sw_box_w = max(half_k, 1) * port_sp + 0.4
-    sw_gap = 1.2
-    total_sw_w = n_sw * sw_box_w + (n_sw - 1) * sw_gap
-
-    strip_w = max(10, min(max(n_q, total_sw_w) * 0.70 + 5, 30))
-    fig, axes = plt.subplots(
-        n_tocks, 2,
-        figsize=(strip_w + 7, 7.0 * n_tocks),
-        facecolor=_FIG_BG,
-        gridspec_kw={"width_ratios": [1, max(1, n_q // 4)]},
-    )
-    sw_label = f"{n_sw}x k={k}" if n_sw > 1 else f"k={k}"
-    # fig.suptitle(
-    # f"Per-Tock Occupancy: Case 4 (MPP, {sw_label} port switch)",
-    # fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
-    # )
-    if n_tocks == 1:
-        axes = [axes]
-
-    pos = nx_local.spring_layout(G, seed=42)
-
-    for gi, sg in enumerate(groups):
-        ax_graph, ax_sw = axes[gi]
-
-        measured = {m["id"] for m in sg.measurements}
-        neighbors = set()
-        for m in sg.measurements:
-            neighbors.update(m["neighbors"])
-        neighbors -= measured
-        connected = measured | neighbors
-
-        # Graph view (left panel)
-        node_colors = [
-            _COL_MEASURE if nd in measured else
-            _COL_NODE_NBR if nd in neighbors else
-            _COL_IDLE
-            for nd in G.nodes
-        ]
-        active_edges = []
-        for m in sg.measurements:
-            for nb in m["neighbors"]:
-                if G.has_edge(m["id"], nb):
-                    active_edges.append((m["id"], nb))
-                elif G.has_edge(nb, m["id"]):
-                    active_edges.append((nb, m["id"]))
-        all_edges = list(G.edges())
-        inactive_edges = [e for e in all_edges
-                          if e not in active_edges
-                          and (e[1], e[0]) not in active_edges]
-        nx_local.draw_networkx_edges(G, pos, edgelist=inactive_edges,
-                                     width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
-        nx_local.draw_networkx_edges(G, pos, edgelist=active_edges,
-                                     width=_LW_HEAVY, edge_color=_COL_NODE_MEAS, ax=ax_graph)
-        nx_local.draw_networkx_nodes(G, pos, node_size=700,
-                                     node_color=node_colors,
-                                     edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
-                                     ax=ax_graph)
-        labels = {
-            nd: (f"{nd}\nX" if nd in measured else
-                 f"{nd}\nZ" if nd in neighbors else str(nd))
-            for nd in G.nodes
-        }
-        nx_local.draw_networkx_labels(G, pos, labels,
-                                      font_size=_FS_NODE, font_color=_COL_TEXT_DARK, ax=ax_graph)
-        op_strs = []
-        for m in sg.measurements:
-            parts = [f"X{m['id']}"] + [f"Z{nb}" for nb in m["neighbors"]]
-            op_strs.append(" ".join(parts))
-        ax_graph.text(0.5, 0.02, "  |  ".join(op_strs),
-                      transform=ax_graph.transAxes,
-                      ha="center", fontsize=_FS_ANNOT, family="monospace",
-                      color=_COL_TEXT_LIGHT, zorder=3)
-        ax_graph.legend(
-            handles=[
-                mpatches.Patch(facecolor=_COL_MEASURE, edgecolor=_COL_BORDER,
-                               lw=_LW_MEDIUM, label="X (measured)"),
-                mpatches.Patch(facecolor=_COL_NODE_NBR, edgecolor=_COL_BORDER,
-                               lw=_LW_MEDIUM, label="Z (neighbour)"),
-            ],
-            fontsize=_FS_LEGEND, frameon=False, loc="upper right",
-        )
-        gen_ids = [m["id"] for m in sg.measurements]
-        ax_graph.set_title(
-            f"Group {gi+1} - generators {gen_ids}",
-            fontsize=_FS_TITLE, fontweight="bold", pad=8,
-        )
-        ax_graph.axis("off")
-        ax_graph.margins(0.18)
-
-        # Build per-switch data
-        sw_nodes: list[set] = [set() for _ in range(n_sw)]
-        sw_gens_list: list[list[dict]] = [[] for _ in range(n_sw)]
-        if sg.switch_gens and len(sg.switch_gens) == n_sw:
-            for si in range(n_sw):
-                sw_nodes[si] = sg.switch_support[si] if sg.switch_support else set()
-                sw_gens_list[si] = sg.switch_gens[si]
-        else:
-            sw_nodes[0] = connected
-            sw_gens_list[0] = sg.measurements
-
-        sw_data_nodes = [sorted(sw_nodes[si]) for si in range(n_sw)]
-        sw_anc_count = [len(sw_gens_list[si]) for si in range(n_sw)]
-
-        total_ports = n_sw * k
-        _draw_switch_diagram(
-            ax_sw,
-            nodes_list=nodes_list, n_q=n_q,
-            data_active=connected, data_other=set(),
-            data_measured=measured, data_neighbor=neighbors,
-            k=k, n_sw=n_sw,
-            sw_data_nodes=sw_data_nodes,
-            sw_anc_count=sw_anc_count,
-            title=(f"Group {gi+1} - {sg.n_ports_used}/{total_ports} ports "
-                   f"({n_sw} switch{'es' if n_sw > 1 else ''}, k={k}), 1 Tock"),
-            is_case4=True,
-        )
-
-    plt.tight_layout()
-    _save_or_show(fig, save_path, "Case 4 occupancy", display)
-
-
-# Per-Tock Occupancy: Case 5 (CZ + k-port switch)
-
-def show_qubit_occupancy_case5(
-    cz_lim: "CZSchedulerLimited",
-    save_path: str | None = None,
-    display:   bool = False,
-) -> None:
-    """Per-Tock occupancy for Case 5 - CZ with k-port switch(es)."""
-    import networkx as nx_local
-
-    G = cz_lim.G
-    n_q = len(G.nodes)
-    batches = cz_lim.scheduled_batches
-    n_tocks = cz_lim.n_tocks()
-    if n_tocks == 0:
-        return
-
-    nodes_list = list(G.nodes)
-    k = cz_lim.switch.k
-    n_sw = cz_lim.switch.n_switches
-
-    half_k = k // 2
-    port_sp = 0.7
-    sw_box_w = max(half_k, 1) * port_sp + 0.4
-    sw_gap = 1.2
-    total_sw_w = n_sw * sw_box_w + (n_sw - 1) * sw_gap
-
-    strip_w = max(10, min(max(n_q, total_sw_w) * 0.70 + 5, 30))
-    fig, axes = plt.subplots(
-        n_tocks, 2,
-        figsize=(strip_w + 7, 7.0 * n_tocks),
-        facecolor=_FIG_BG,
-        gridspec_kw={"width_ratios": [1, max(1, n_q // 4)]},
-    )
-    sw_label = f"{n_sw}x k={k}" if n_sw > 1 else f"k={k}"
-    # fig.suptitle(
-    # f"Per-Tock Occupancy: Case 5 (CZ, {sw_label} port switch)",
-    # fontsize=_FS_SUPTITLE, fontweight="bold", y=1.01,
-    # )
-    if n_tocks == 1:
-        axes = [axes]
-
-    pos = nx_local.spring_layout(G, seed=42)
-
-    for t in range(n_tocks):
-        ax_graph, ax_sw = axes[t]
-        batch_idx = t // 2
-        step = t % 2
-        sb = batches[batch_idx]
-        col = _PALETTE[batch_idx % len(_PALETTE)]
-
-        active_step1 = {u for u, v in sb.edges}
-        active_step2 = {v for u, v in sb.edges}
-        active_now = active_step1 if step == 0 else active_step2
-        active_other = active_step2 if step == 0 else active_step1
-
-        # Graph view (left panel)
-        node_colors = [
-            _COL_NODE_ACTIVE if nd in active_now else
-            _COL_NODE_OTHER  if nd in active_other else
-            _COL_IDLE
-            for nd in G.nodes
-        ]
-        batch_edge_set = {(min(u, v), max(u, v)) for u, v in sb.edges}
-        active_edges = [(u, v) for u, v in G.edges()
-                        if (min(u, v), max(u, v)) in batch_edge_set]
-        inactive_edges = [(u, v) for u, v in G.edges()
-                          if (min(u, v), max(u, v)) not in batch_edge_set]
-        nx_local.draw_networkx_edges(G, pos, edgelist=inactive_edges,
-                                     width=_LW_MEDIUM, edge_color=_COL_EDGE_OFF, ax=ax_graph)
-        nx_local.draw_networkx_edges(G, pos, edgelist=active_edges,
-                                     width=_LW_HEAVY, edge_color=col, ax=ax_graph)
-        nx_local.draw_networkx_nodes(G, pos, node_size=700,
-                                     node_color=node_colors,
-                                     edgecolors=_COL_BORDER, linewidths=_LW_MEDIUM,
-                                     ax=ax_graph)
-        step_lbl = "Z_u" if step == 0 else "Z_v"
-        labels = {
-            nd: (f"{nd}\n{step_lbl}" if nd in active_now else str(nd))
-            for nd in G.nodes
-        }
-        nx_local.draw_networkx_labels(G, pos, labels,
-                                      font_size=_FS_ANNOT, font_color=_COL_TEXT_DARK, ax=ax_graph)
-        edge_strs = [f"CZ({u},{v})" for u, v in sb.edges]
-        ax_graph.text(0.5, 0.02, "  ".join(edge_strs),
-                      transform=ax_graph.transAxes,
-                      ha="center", fontsize=_FS_ANNOT, family="monospace",
-                      color=_COL_TEXT_LIGHT, zorder=3)
-        ax_graph.legend(
-            handles=[
-                mpatches.Patch(facecolor=_COL_NODE_ACTIVE, edgecolor=_COL_BORDER,
-                               lw=_LW_MEDIUM, label="Active this tock"),
-                mpatches.Patch(facecolor=_COL_NODE_OTHER, edgecolor=_COL_BORDER,
-                               lw=_LW_MEDIUM, label="Other CZ endpoint"),
-            ],
-            fontsize=_FS_LEGEND, frameon=False, loc="upper right",
-        )
-        step_name = "Step 1 (Z_u x Z_anc)" if step == 0 else "Step 2 (Z_v x Z_anc)"
-        ax_graph.set_title(
-            f"Tock {t+1} - Sub-batch {batch_idx+1}, {step_name}",
-            fontsize=_FS_TITLE, fontweight="bold", pad=8,
-        )
-        ax_graph.axis("off")
-        ax_graph.margins(0.18)
-
-        # Build per-switch data
-        n_gates = len(sb.edges)
-        sw_edge_lists: list[list[tuple]] = [[] for _ in range(n_sw)]
-        if sb.switch_edges and len(sb.switch_edges) == n_sw:
-            sw_edge_lists = sb.switch_edges
-        else:
-            sw_edge_lists[0] = list(sb.edges)
-
-        # Data nodes per switch (active this step)
-        sw_data_nodes_list: list[list] = [[] for _ in range(n_sw)]
-        for si in range(n_sw):
-            for u, v in sw_edge_lists[si]:
-                nd_now = u if step == 0 else v
-                sw_data_nodes_list[si].append(nd_now)
-            sw_data_nodes_list[si].sort()
-
-        sw_anc_count = [len(sw_edge_lists[si]) for si in range(n_sw)]
-        total_ports = n_sw * k
-
-        _draw_switch_diagram(
-            ax_sw,
-            nodes_list=nodes_list, n_q=n_q,
-            data_active=active_now, data_other=active_other,
-            data_measured=set(), data_neighbor=set(),
-            k=k, n_sw=n_sw,
-            sw_data_nodes=sw_data_nodes_list,
-            sw_anc_count=sw_anc_count,
-            title=(f"Tock {t+1} - {n_gates} CZ gate(s), "
-                   f"{sb.n_ports_used}/{total_ports} ports "
-                   f"({n_sw} switch{'es' if n_sw > 1 else ''}, k={k})"),
-            is_case4=False,
-        )
-
-    plt.tight_layout()
-    _save_or_show(fig, save_path, "Case 5 occupancy", display)
+def _tick_step(n: int, target: int = 20) -> int:
+    return max(1, math.ceil(n / target))
 
 
 def _save_or_show(
@@ -2194,12 +193,919 @@ def _save_or_show(
     """Save to file and/or display interactively.
 
     display=True  -> always call plt.show(), even when a save_path is given.
-    display=False -> only show when save_path is None (original behaviour).
+    display=False -> only show when save_path is None.
     """
     if save_path:
-        fig.savefig(save_path, dpi=150, bbox_inches="tight",
+        fig.savefig(save_path, dpi=200, bbox_inches="tight",
                     facecolor=fig.get_facecolor())
         print(f"  {label.capitalize()} saved -> {save_path}")
     if not save_path or display:
         plt.show()
     plt.close(fig)
+
+
+# Graph panels
+
+def _node_size(n: int) -> float:
+    return float(max(120, min(620, 5200 / max(n, 1))))
+
+
+def _draw_graph(
+    ax:          plt.Axes,
+    G:           nx.Graph,
+    pos:         dict,
+    node_fill:   dict,
+    edge_colour: dict,
+    caption:     str | None = None,
+    labels:      bool = True,
+) -> None:
+    """Graph view: inactive edges thin grey, active edges thick and coloured."""
+    off = [e for e in G.edges() if (min(e), max(e)) not in edge_colour]
+    on  = [e for e in G.edges() if (min(e), max(e)) in edge_colour]
+    nx.draw_networkx_edges(G, pos, edgelist=off, width=1.0,
+                           edge_color=EDGE_OFF, ax=ax)
+    if on:
+        nx.draw_networkx_edges(G, pos, edgelist=on, width=2.6,
+                               edge_color=[edge_colour[(min(e), max(e))] for e in on],
+                               ax=ax)
+    fills = [node_fill.get(v, IDLE) for v in G.nodes]
+    edges = [RULE if node_fill.get(v, IDLE) == IDLE else SURFACE for v in G.nodes]
+    nx.draw_networkx_nodes(G, pos, node_size=_node_size(len(G)), node_color=fills,
+                           edgecolors=edges, linewidths=1.2, ax=ax)
+    if labels and len(G) <= 40:
+        for v, (x, y) in pos.items():
+            fill = node_fill.get(v, IDLE)
+            ax.text(x, y, str(v), ha="center", va="center",
+                    fontsize=_FS_SMALL if len(G) <= 20 else _FS_TINY,
+                    fontweight="bold",
+                    color=_text_on(fill) if fill != IDLE else INK_3, zorder=5)
+    if caption:
+        ax.text(0.0, -0.02, caption, transform=ax.transAxes, ha="left", va="top",
+                fontsize=_FS_TINY, family="monospace", color=INK_3)
+    ax.set_aspect("equal")
+    ax.margins(0.12)
+    ax.axis("off")
+
+
+def _draw_tile_strip(
+    ax:        plt.Axes,
+    nodes:     list,
+    data_fill: dict,
+    ancillas:  dict,
+    anc_fill:  str,
+    rows:      tuple[str, str] = ("Ancilla", "Data"),
+) -> None:
+    """
+    Two rows of tiles: ancilla QPUs docked above the data QPUs they touch.
+
+    data_fill : {node: fill} for active data QPUs (others drawn idle)
+    ancillas  : {node: label} ancilla docked above that data QPU
+    """
+    n = len(nodes)
+    ax.set_xlim(-1.9, n + 0.1)
+    ax.set_ylim(-0.25, 2.65)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.text(-0.25, 2.05, rows[0], ha="right", va="center",
+            fontsize=_FS_SMALL, color=INK_2)
+    ax.text(-0.25, 0.45, rows[1], ha="right", va="center",
+            fontsize=_FS_SMALL, color=INK_2)
+    label_fs = _FS_TINY if n <= 24 else 5
+    for i, v in enumerate(nodes):
+        fill = data_fill.get(v)
+        ax.add_patch(FancyBboxPatch(
+            (i + 0.06, 0.06), 0.88, 0.78, boxstyle="round,pad=0,rounding_size=0.12",
+            facecolor=fill or IDLE, edgecolor=fill or IDLE_EDGE, linewidth=0.8))
+        if n <= 48:
+            ax.text(i + 0.5, 0.45, f"Q{v}", ha="center", va="center",
+                    fontsize=label_fs, fontweight="bold" if fill else "normal",
+                    color=_text_on(fill) if fill else IDLE_TEXT)
+        if v in ancillas:
+            ax.plot([i + 0.5, i + 0.5], [0.84, 1.66], color=anc_fill,
+                    linewidth=1.4, solid_capstyle="round", zorder=0)
+            ax.add_patch(FancyBboxPatch(
+                (i + 0.06, 1.66), 0.88, 0.78, boxstyle="round,pad=0,rounding_size=0.12",
+                facecolor=anc_fill, edgecolor=anc_fill, linewidth=0.8))
+            if n <= 48:
+                ax.text(i + 0.5, 2.05, ancillas[v], ha="center", va="center",
+                        fontsize=label_fs, fontweight="bold", color=_text_on(anc_fill))
+        else:
+            ax.add_patch(FancyBboxPatch(
+                (i + 0.06, 1.66), 0.88, 0.78, boxstyle="round,pad=0,rounding_size=0.12",
+                facecolor=SURFACE, edgecolor=IDLE_EDGE, linewidth=0.8, linestyle=(0, (2, 2))))
+
+
+def _operators(measurements: list) -> str:
+    """'X1 Z0 Z2 Z4' per measurement, shortened when there are many."""
+    ops = "   ".join(" ".join([f"X{m['id']}"] + [f"Z{nb}" for nb in m["neighbors"]])
+                     for m in measurements)
+    if len(ops) <= 60:
+        return ops
+    n = len(measurements)
+    return f"{n} measurement{'s' if n != 1 else ''}"
+
+
+def _per_tock_figure(n_rows: int, n_q: int, right_ratio: float = 1.8):
+    width = max(9.0, min(6.0 + n_q * 0.42, 22.0))
+    height = 2.6 * n_rows + 0.6
+    fig, axes = plt.subplots(
+        n_rows, 2, figsize=(width, height), layout="constrained",
+        gridspec_kw={"width_ratios": [1, right_ratio]}, squeeze=False,
+    )
+    return fig, axes
+
+
+# 2D patch layout
+
+def _draw_patch_layout(
+    ax:          plt.Axes,
+    G:           nx.Graph,
+    pos:         dict,
+    node_fill:   dict,
+    node_edge:   dict,
+    edge_colour: dict,
+) -> None:
+    """QPUs as rounded surface-code patches; edges drawn border to border."""
+    xs = [p[0] for p in pos.values()] or [0]
+    ys = [p[1] for p in pos.values()] or [0]
+    span = max(max(xs) - min(xs), max(ys) - min(ys), 1e-9)
+    pts = list(pos.values())
+    min_d = min((math.hypot(a[0] - b[0], a[1] - b[1])
+                 for i, a in enumerate(pts) for b in pts[i + 1:]), default=span)
+    hw = max(0.012 * span, min(0.06 * span, 0.28 * min_d))
+
+    for u, v in G.edges():
+        key = (min(u, v), max(u, v))
+        col = edge_colour.get(key, EDGE_OFF)
+        ax.plot([pos[u][0], pos[v][0]], [pos[u][1], pos[v][1]],
+                color=col, linewidth=2.6 if key in edge_colour else 1.0,
+                solid_capstyle="round", zorder=1)
+
+    for v, (x, y) in pos.items():
+        fill = node_fill.get(v, IDLE)
+        ax.add_patch(FancyBboxPatch(
+            (x - hw, y - hw), 2 * hw, 2 * hw,
+            boxstyle=f"round,pad=0,rounding_size={hw * 0.35}",
+            facecolor=fill, edgecolor=node_edge.get(v, RULE),
+            linewidth=1.2, zorder=2))
+        if len(G) <= 40:
+            ax.text(x, y, str(v), ha="center", va="center",
+                    fontsize=_FS_SMALL if len(G) <= 20 else _FS_TINY,
+                    fontweight="bold", color=_text_on(fill), zorder=3)
+
+    pad = hw * 2.2
+    ax.set_xlim(min(xs) - pad, max(xs) + pad)
+    ax.set_ylim(min(ys) - pad, max(ys) + pad)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+
+def _order_legend(ax: plt.Axes, colours: list[str], word: str,
+                  extra: list | None = None) -> None:
+    """Time-order legend in one row under the panel (first ... last if long)."""
+    n = len(colours)
+    idx = list(range(n)) if n <= 8 else [0, 1, 2, n - 2, n - 1]
+    handles = []
+    for j, i in enumerate(idx):
+        if n > 8 and j == 3:
+            handles.append(Line2D([], [], linestyle="none", label="..."))
+        handles.append(Line2D([], [], color=colours[i], linewidth=3, label=str(i + 1)))
+    leg = ax.legend(handles=handles, title=word, loc="upper left",
+                    bbox_to_anchor=(0.0, 0.0), ncol=len(handles), columnspacing=0.9,
+                    handlelength=1.4, alignment="left", title_fontsize=_FS_SMALL)
+    if extra:
+        ax.add_artist(leg)
+        ax.legend(handles=extra, loc="upper right")
+
+
+def show_2d_layout(
+    scheduler: "SubstrateScheduler",
+    cz:        "CZScheduler",
+    cz_k:      "CZSchedulerFixedAncilla | None" = None,
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """
+    QPUs drawn as surface-code patches, one panel per case.
+
+    Case 1: MIS QPUs (green) start in |+>; measured QPUs (blue).  Edges are
+    shaded by the Tock that covers them.  Cases 2/3: edges shaded by CZ round
+    or sub-batch.
+    """
+    G   = scheduler.G
+    pos = _positions(G)
+
+    tock_of: dict[tuple, int] = {}
+    for t, tock in enumerate(scheduler.schedule):
+        for b in tock:
+            for v in b["neighbors"]:
+                tock_of.setdefault((min(b["id"], v), max(b["id"], v)), t)
+    t_cols = _shades("mpp", len(scheduler.schedule))
+
+    round_of = {(min(u, v), max(u, v)): r
+                for r, edges in enumerate(cz.cz_rounds) for u, v in edges}
+    r_cols = _shades("cz", len(cz.cz_rounds))
+
+    panels = 3 if cz_k is not None else 2
+    fig, axes = plt.subplots(1, panels, figsize=(5.4 * panels, 6.0),
+                             layout="constrained")
+
+    mis = set(scheduler.mis)
+    fill1 = {v: (FREE_MID if v in mis else MPP_MID) for v in G.nodes}
+    edge1 = {v: (FREE if v in mis else MPP) for v in G.nodes}
+    _draw_patch_layout(axes[0], G, pos, fill1, edge1,
+                       {e: t_cols[t] for e, t in tock_of.items()})
+    _title(axes[0], "Case 1: MPP",
+           f"{len(scheduler.schedule)} Tocks, edges shaded by Tock")
+    _order_legend(axes[0], t_cols, "Tock", extra=[
+        _swatch(FREE_MID, "MIS, starts in |+>", FREE),
+        _swatch(MPP_MID, "measured", MPP),
+    ])
+
+    _draw_patch_layout(axes[1], G, pos, {}, {},
+                       {e: r_cols[r] for e, r in round_of.items()})
+    _title(axes[1], "Case 2: CZ",
+           f"{len(cz.cz_rounds)} rounds, edges shaded by round")
+    _order_legend(axes[1], r_cols, "CZ round")
+
+    if cz_k is not None:
+        batch_of = {(min(u, v), max(u, v)): b
+                    for b, batch in enumerate(cz_k.batches) for u, v in batch}
+        b_cols = _shades("cz", len(cz_k.batches))
+        _draw_patch_layout(axes[2], G, pos, {}, {},
+                           {e: b_cols[b] for e, b in batch_of.items()})
+        _title(axes[2], f"Case 3: CZ, k = {cz_k.k} ancillas",
+               f"{len(cz_k.batches)} sub-batches, edges shaded by sub-batch")
+        _order_legend(axes[2], b_cols, "Sub-batch")
+
+    _save_or_show(fig, save_path, "2D layout", display)
+
+
+# Schedule heatmaps
+
+def _build_heatmap_case1(scheduler: "SubstrateScheduler") -> np.ndarray:
+    """Matrix[qubit_row, tock] = 0 (idle) | 1 (Z-neighbour) | 2 (X-measured)."""
+    nds = list(scheduler.G.nodes)
+    row = {n: i for i, n in enumerate(nds)}
+    m = np.zeros((len(nds), len(scheduler.schedule)), dtype=np.int8)
+    for t, tock in enumerate(scheduler.schedule):
+        for b in tock:
+            m[row[b["id"]], t] = 2
+            for nb in b["neighbors"]:
+                if m[row[nb], t] == 0:
+                    m[row[nb], t] = 1
+    return m
+
+
+def _build_heatmap_cz(G: nx.Graph, batches: list) -> np.ndarray:
+    """Matrix[qubit_row, tock] = 0 (idle) | 1 (step-1 qubit) | 2 (step-2 qubit)."""
+    row = {n: i for i, n in enumerate(G.nodes)}
+    m = np.zeros((len(G), 2 * len(batches)), dtype=np.int8)
+    for b, edges in enumerate(batches):
+        for u, v in edges:
+            m[row[u], 2 * b] = 1
+            m[row[v], 2 * b + 1] = 2
+    return m
+
+
+def _build_heatmap_case2(cz: "CZScheduler") -> np.ndarray:
+    return _build_heatmap_cz(cz.G, cz.cz_rounds)
+
+
+def _build_heatmap_case3(cz_k: "CZSchedulerFixedAncilla") -> np.ndarray:
+    return _build_heatmap_cz(cz_k.G, cz_k.batches)
+
+
+def _mpp_legend() -> list:
+    return [_swatch(IDLE, "idle", IDLE_EDGE), _swatch(MPP_MID, "Z neighbour"),
+            _swatch(MPP, "X measured")]
+
+
+def _cz_legend() -> list:
+    return [_swatch(IDLE, "idle", IDLE_EDGE), _swatch(CZ_MID, "CZ step 1"),
+            _swatch(CZ, "CZ step 2")]
+
+
+def plot_heatmap(
+    matrix:   np.ndarray,
+    x_labels: list[str],
+    y_labels: list[str],
+    title:    str,
+    cmap:     ListedColormap,
+    legend_handles: list,
+    ax:       plt.Axes,
+    vline_every: int = 0,
+    subtitle: str | None = None,
+) -> None:
+    """Qubit x Tock grid; one cell per (QPU, Tock), white gaps between cells."""
+    n_q, n_t = matrix.shape
+    ax.imshow(matrix, aspect="auto", cmap=cmap, vmin=0, vmax=cmap.N - 1,
+              interpolation="nearest", origin="upper")
+    gap = 1.6 if max(n_q, n_t) <= 40 else 0.6
+    ax.set_xticks(np.arange(-0.5, n_t, 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, n_q, 1), minor=True)
+    ax.grid(which="minor", color=SURFACE, linewidth=gap)
+    ax.tick_params(which="minor", length=0)
+    if vline_every > 0:
+        for x in range(vline_every, n_t, vline_every):
+            ax.axvline(x - 0.5, color=RULE, linewidth=1.2, zorder=4)
+    xs = _tick_step(n_t, 24)
+    ys = _tick_step(n_q, 30)
+    ax.set_xticks(range(0, n_t, xs))
+    ax.set_xticklabels(x_labels[::xs], fontsize=_FS_TINY)
+    ax.set_yticks(range(0, n_q, ys))
+    ax.set_yticklabels(y_labels[::ys], fontsize=_FS_TINY)
+    for s in ax.spines.values():
+        s.set_visible(False)
+    ax.set_xlabel("Tock")
+    _title(ax, title, subtitle)
+    _legend_above(ax, legend_handles)
+
+
+def show_heatmaps(
+    scheduler: "SubstrateScheduler",
+    cz:        "CZScheduler",
+    cz_k:      "CZSchedulerFixedAncilla | None" = None,
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """Side-by-side schedule heatmaps for Cases 1, 2 (and 3)."""
+    nds = list(scheduler.G.nodes)
+    y_lbl = [f"Q{v}" for v in nds]
+    mats = [(_build_heatmap_case1(scheduler), "mpp")]
+    mats.append((_build_heatmap_case2(cz), "cz"))
+    if cz_k is not None:
+        mats.append((_build_heatmap_case3(cz_k), "cz"))
+
+    widths = [max(m.shape[1], 3) for m, _ in mats]
+    height = max(4.2, min(len(nds) * 0.24 + 2.2, 18))
+    fig_w = max(11, sum(widths) * 0.32 + 3.5 * len(mats))
+    fig, axes = plt.subplots(1, len(mats), figsize=(fig_w, height), layout="constrained",
+                             gridspec_kw={"width_ratios": widths})
+
+    cm_mpp = ListedColormap([IDLE, MPP_MID, MPP])
+    cm_cz  = ListedColormap([IDLE, CZ_MID, CZ])
+
+    m1 = mats[0][0]
+    plot_heatmap(m1, [f"T{t+1}" for t in range(m1.shape[1])], y_lbl,
+                 "Case 1: MPP", cm_mpp, _mpp_legend(), axes[0],
+                 subtitle=f"{m1.shape[1]} Tocks")
+    m2 = mats[1][0]
+    plot_heatmap(m2, [f"T{t+1}" for t in range(m2.shape[1])], y_lbl,
+                 "Case 2: CZ", cm_cz, _cz_legend(), axes[1], vline_every=2,
+                 subtitle=f"{m2.shape[1]} Tocks, {len(cz.cz_rounds)} rounds of 2 Tocks")
+    if cz_k is not None:
+        m3 = mats[2][0]
+        plot_heatmap(m3, [f"T{t+1}" for t in range(m3.shape[1])], y_lbl,
+                     f"Case 3: CZ, k = {cz_k.k}", cm_cz, _cz_legend(), axes[2],
+                     vline_every=2,
+                     subtitle=f"{m3.shape[1]} Tocks, {len(cz_k.batches)} sub-batches")
+    _save_or_show(fig, save_path, "heatmap", display)
+
+
+# Gantt charts
+
+def _gantt_axes(ax: plt.Axes, n_t: int, nodes: list, title: str,
+                subtitle: str, legend: list) -> dict:
+    """Common frame: Q0 at the top, a header lane for group labels."""
+    n_q = len(nodes)
+    ax.set_xlim(0, max(n_t, 1))
+    ax.set_ylim(n_q - 0.5, -1.4)  # inverted: Q0 on top, header lane above it
+    step = _tick_step(n_t, 24)
+    ax.set_xticks([t + 0.5 for t in range(0, n_t, step)])
+    ax.set_xticklabels([f"T{t+1}" for t in range(0, n_t, step)], fontsize=_FS_TINY)
+    ys = _tick_step(n_q, 30)
+    ax.set_yticks(range(0, n_q, ys))
+    ax.set_yticklabels([f"Q{v}" for v in nodes[::ys]], fontsize=_FS_TINY)
+    ax.spines["left"].set_visible(False)
+    ax.set_xlabel("Tock")
+    _title(ax, title, subtitle)
+    _legend_above(ax, legend)
+    return {v: i for i, v in enumerate(nodes)}
+
+
+def _bar(ax: plt.Axes, t: float, row: int, fill: str, text: str | None,
+         show_text: bool) -> None:
+    ax.add_patch(FancyBboxPatch(
+        (t + 0.08, row - 0.36), 0.84, 0.72,
+        boxstyle="round,pad=0,rounding_size=0.12",
+        facecolor=fill, edgecolor=fill, linewidth=0, zorder=2))
+    if show_text and text:
+        ax.text(t + 0.5, row, text, ha="center", va="center", fontsize=_FS_TINY,
+                fontweight="bold", color=_text_on(fill), zorder=3)
+
+
+def plot_gantt_case1(scheduler: "SubstrateScheduler", ax: plt.Axes) -> None:
+    """Gantt chart for Case 1: X on the measured QPU, Z on its neighbours."""
+    nodes = list(scheduler.G.nodes)
+    n_t = len(scheduler.schedule)
+    row = _gantt_axes(ax, n_t, nodes, "Case 1: MPP", f"{n_t} Tocks", _mpp_legend()[1:])
+    show = len(nodes) <= 40
+    for t, tock in enumerate(scheduler.schedule):
+        if t % 2:
+            ax.axvspan(t, t + 1, color=BAND, zorder=0, linewidth=0)
+        for b in tock:
+            _bar(ax, t, row[b["id"]], MPP, "X", show)
+            for nb in b["neighbors"]:
+                _bar(ax, t, row[nb], MPP_MID, "Z", show)
+
+
+def _gantt_cz(ax: plt.Axes, G: nx.Graph, batches: list, word: str,
+              title: str, subtitle: str) -> None:
+    nodes = list(G.nodes)
+    n_t = 2 * len(batches)
+    row = _gantt_axes(ax, n_t, nodes, title, subtitle, _cz_legend()[1:])
+    show = len(nodes) <= 40
+    for b, edges in enumerate(batches):
+        t1 = 2 * b
+        if b % 2:
+            ax.axvspan(t1, t1 + 2, color=BAND, zorder=0, linewidth=0)
+        if n_t <= 60:
+            ax.text(t1 + 1, -0.95, f"{word}{b+1}", ha="center", va="center",
+                    fontsize=_FS_TINY, color=INK_3)
+        for u, v in edges:
+            _bar(ax, t1, row[u], CZ_MID, None, show)
+            _bar(ax, t1 + 1, row[v], CZ, None, show)
+
+
+def plot_gantt_case2(cz: "CZScheduler", ax: plt.Axes) -> None:
+    """Gantt chart for Case 2: each CZ round takes 2 Tocks."""
+    _gantt_cz(ax, cz.G, cz.cz_rounds, "R", "Case 2: CZ",
+              f"{2 * len(cz.cz_rounds)} Tocks, {len(cz.cz_rounds)} rounds")
+
+
+def plot_gantt_case3(cz_k: "CZSchedulerFixedAncilla", ax: plt.Axes) -> None:
+    """Gantt chart for Case 3: sub-batches of at most k CZ gates, 2 Tocks each."""
+    _gantt_cz(ax, cz_k.G, cz_k.batches, "B", f"Case 3: CZ, k = {cz_k.k}",
+              f"{cz_k.n_tocks()} Tocks, {len(cz_k.batches)} sub-batches")
+
+
+def show_gantt(
+    scheduler: "SubstrateScheduler",
+    cz:        "CZScheduler",
+    cz_k:      "CZSchedulerFixedAncilla | None" = None,
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """Side-by-side Gantt charts for Cases 1, 2 (and 3)."""
+    n_q = len(scheduler.G.nodes)
+    widths = [max(len(scheduler.schedule), 3), max(2 * len(cz.cz_rounds), 3)]
+    if cz_k is not None:
+        widths.append(max(cz_k.n_tocks(), 3))
+    height = max(4.2, min(n_q * 0.30 + 2.4, 20))
+    fig_w = max(12, sum(widths) * 0.36 + 3.5 * len(widths))
+    fig, axes = plt.subplots(1, len(widths), figsize=(fig_w, height),
+                             layout="constrained", gridspec_kw={"width_ratios": widths})
+    plot_gantt_case1(scheduler, axes[0])
+    plot_gantt_case2(cz, axes[1])
+    if cz_k is not None:
+        plot_gantt_case3(cz_k, axes[2])
+    _save_or_show(fig, save_path, "Gantt chart", display)
+
+
+# Comparison dashboard
+
+def show_comparison_dashboard(
+    report:    "ResourceReport",
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """Tocks, peak ancillas and physical qubits for every case that was run."""
+    entries = [
+        ("Case 1", "MPP", MPP, report.tocks_case1,
+         report.peak_ancilla_ELUs_case1, report.total_phys_qubits_case1),
+        ("Case 2", "CZ", CZ, report.tocks_case2,
+         report.peak_ancilla_ELUs_case2, report.total_phys_qubits_case2),
+    ]
+    if report.tocks_case3 is not None:
+        entries.append(("Case 3", f"CZ, k={report.ancilla_k}", CZ_MID,
+                        report.tocks_case3, report.peak_ancilla_ELUs_case3,
+                        report.total_phys_qubits_case3))
+    if report.tocks_case4 is not None:
+        entries.append(("Case 4", f"MPP, {report.switch_k} ports", MPP_MID,
+                        report.tocks_case4, report.peak_ancilla_ELUs_case4,
+                        report.total_phys_qubits_case4))
+    if report.tocks_case5 is not None:
+        entries.append(("Case 5", f"CZ, {report.switch_k} ports", CZ_MID,
+                        report.tocks_case5, report.peak_ancilla_ELUs_case5,
+                        report.total_phys_qubits_case5))
+
+    labels  = [f"{c}\n{d}" for c, d, *_ in entries]
+    colours = [e[2] for e in entries]
+    n = len(entries)
+    fig, axes = plt.subplots(1, 3, figsize=(max(12, 1.4 * n * 3 + 2), 4.6),
+                             layout="constrained")
+
+    panels = [
+        ("Time", "Tocks (logical time steps)", [e[3] for e in entries], "{:,}"),
+        ("Peak ancilla QPUs", "ancillas in use at the same time",
+         [e[4] for e in entries], "{:,}"),
+        ("Physical qubits", f"d = {report.code_distance}, "
+         f"{report.phys_per_ELU} physical qubits per QPU",
+         [e[5] for e in entries], "{:,}"),
+    ]
+    for ax, (title, subtitle, vals, fmt) in zip(axes, panels):
+        x = np.arange(n)
+        clean = [v if v is not None else 0 for v in vals]
+        ax.bar(x, clean, width=0.62, color=colours, edgecolor=SURFACE,
+               linewidth=2, zorder=2)
+        top = max(clean) if clean and max(clean) > 0 else 1
+        for xi, v in zip(x, vals):
+            ax.text(xi, (v or 0) + top * 0.02, "-" if v is None else fmt.format(v),
+                    ha="center", va="bottom", fontsize=_FS_SMALL,
+                    fontweight="bold", color=INK)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, fontsize=_FS_SMALL)
+        ax.set_ylim(0, top * 1.15)
+        ax.spines["left"].set_visible(False)
+        ax.yaxis.grid(True, color=GRID, linewidth=0.8, zorder=0)
+        ax.set_axisbelow(True)
+        ax.yaxis.set_major_locator(mpl.ticker.MaxNLocator(integer=True))
+        ax.yaxis.set_major_formatter(mpl.ticker.StrMethodFormatter("{x:,.0f}"))
+        _title(ax, title, subtitle)
+
+    fig.legend(handles=[_swatch(MPP, "MPP"), _swatch(CZ, "CZ"),
+                        _swatch(RULE, "lighter shade = constrained (k ancillas or k ports)")],
+               loc="outside lower left", ncol=3)
+    _save_or_show(fig, save_path, "dashboard", display)
+
+
+# Per-Tock occupancy: Case 1
+
+def _occupancy_legend(fig: plt.Figure, handles: list) -> None:
+    fig.legend(handles=handles, loc="outside upper left", ncol=len(handles))
+
+
+def show_qubit_occupancy(
+    scheduler: "SubstrateScheduler",
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """
+    One row per Tock (Case 1, MPP).  Left: the graph with the measured QPU (X)
+    and its Z-neighbours.  Right: ancilla and data QPUs in use.
+    """
+    if not scheduler.schedule:
+        print("  No tocks to display.")
+        return
+    G = scheduler.G
+    nodes = list(G.nodes)
+    pos = _positions(G)
+    layout_free = getattr(scheduler, "layout_free", False)
+    fig, axes = _per_tock_figure(len(scheduler.schedule), len(nodes))
+    _occupancy_legend(fig, [_swatch(MPP, "X measured"), _swatch(MPP_MID, "Z neighbour"),
+                            _swatch(IDLE, "idle", IDLE_EDGE)])
+
+    for t, tock in enumerate(scheduler.schedule):
+        ax_g, ax_t = axes[t]
+        measured = {b["id"] for b in tock}
+        nbrs = {nb for b in tock for nb in b["neighbors"]} - measured
+        fill = {**{v: MPP_MID for v in nbrs}, **{v: MPP for v in measured}}
+        edges = {(min(b["id"], nb), max(b["id"], nb)): MPP
+                 for b in tock for nb in b["neighbors"]}
+        _draw_graph(ax_g, G, pos, fill, edges)
+        _title(ax_g, f"Tock {t + 1}", _operators(tock))
+
+        if layout_free:
+            ancillas = {b["id"]: f"A{i}" for i, b in enumerate(tock)}
+        else:  # substrate model: the ancilla strip spans positions L..R
+            by_pos = {scheduler.mapping[v]: v for v in nodes}
+            ancillas = {}
+            for i, b in enumerate(tock):
+                for p in range(b["L"], b["R"] + 1):
+                    if p in by_pos:
+                        ancillas[by_pos[p]] = f"A{i}"
+        _draw_tile_strip(ax_t, nodes, fill, ancillas, MPP)
+        _title(ax_t, "QPUs in use",
+               f"{len(measured) + len(nbrs)} data, {len(tock)} ancilla")
+
+    _save_or_show(fig, save_path, "qubit occupancy", display)
+
+
+# Per-Tock occupancy: Cases 2 and 3
+
+def _occupancy_cz(G: nx.Graph, batches: list, word: str, pool: int | None,
+                  save_path: str | None, display: bool, label: str) -> None:
+    n_t = 2 * len(batches)
+    if n_t == 0:
+        print("  No tocks to display.")
+        return
+    nodes = list(G.nodes)
+    pos = _positions(G)
+    fig, axes = _per_tock_figure(n_t, len(nodes))
+    _occupancy_legend(fig, [_swatch(CZ, "active this Tock"),
+                            _swatch(CZ_MID, "other end of the CZ"),
+                            _swatch(IDLE, "idle", IDLE_EDGE)])
+    for t in range(n_t):
+        ax_g, ax_t = axes[t]
+        b, step = divmod(t, 2)
+        edges = batches[b]
+        now   = {u if step == 0 else v for u, v in edges}
+        other = {v if step == 0 else u for u, v in edges}
+        fill = {**{v: CZ_MID for v in other}, **{v: CZ for v in now}}
+        _draw_graph(ax_g, G, pos, fill,
+                    {(min(u, v), max(u, v)): CZ for u, v in edges})
+        _title(ax_g, f"Tock {t + 1}",
+               f"{word} {b + 1}, step {step + 1}: "
+               + (r"$Z_u \otimes Z_{anc}$" if step == 0 else r"$Z_v \otimes Z_{anc}$"))
+        ancillas = {(u if step == 0 else v): f"A{i}" for i, (u, v) in enumerate(edges)}
+        _draw_tile_strip(ax_t, nodes, {v: CZ for v in now}, ancillas, CZ_DARK)
+        in_use = f"{len(edges)} of {pool}" if pool else f"{len(edges)}"
+        _title(ax_t, "QPUs in use", f"{len(now)} data, {in_use} ancillas")
+    _save_or_show(fig, save_path, label, display)
+
+
+def show_qubit_occupancy_case2(
+    cz:        "CZScheduler",
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """One row per Tock for Case 2 (CZ, unlimited ancillas)."""
+    _occupancy_cz(cz.G, cz.cz_rounds, "Round", None, save_path, display,
+                  "Case 2 qubit occupancy")
+
+
+def show_qubit_occupancy_case3(
+    cz_k:      "CZSchedulerFixedAncilla",
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """One row per Tock for Case 3 (CZ, fixed pool of k ancillas)."""
+    _occupancy_cz(cz_k.G, cz_k.batches, "Sub-batch", cz_k.k, save_path, display,
+                  "Case 3 qubit occupancy")
+
+
+# k-port switch: utilisation and heatmaps
+
+def show_port_utilization(
+    mpp_lim: "MPPSchedulerLimited | None" = None,
+    cz_lim:  "CZSchedulerLimited | None" = None,
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """Ports used per Tock group (Case 4) and per CZ sub-batch (Case 5)."""
+    panels = []
+    if mpp_lim is not None and mpp_lim.scheduled_groups:
+        panels.append(("Case 4: MPP through the switch", mpp_lim.scheduled_groups,
+                       mpp_lim.switch.k * mpp_lim.switch.n_switches, "Group", MPP))
+    if cz_lim is not None and cz_lim.scheduled_batches:
+        panels.append(("Case 5: CZ through the switch", cz_lim.scheduled_batches,
+                       cz_lim.switch.k * cz_lim.switch.n_switches, "Sub-batch", CZ))
+    if not panels:
+        return
+
+    fig, axes = plt.subplots(1, len(panels), figsize=(6.5 * len(panels), 4.4),
+                             layout="constrained", squeeze=False)
+    for ax, (title, sched, k, xlabel, colour) in zip(axes[0], panels):
+        used = [item.n_ports_used for item in sched]
+        x = np.arange(len(used))
+        ax.bar(x, used, width=0.62, color=colour, edgecolor=SURFACE,
+               linewidth=2, zorder=2)
+        ax.axhline(k, color=INK_2, linewidth=1.2, linestyle=(0, (4, 3)), zorder=3)
+        if len(used) <= 30:
+            for xi, u in zip(x, used):
+                ax.text(xi, u + k * 0.02, str(u), ha="center", va="bottom",
+                        fontsize=_FS_SMALL, fontweight="bold", color=INK)
+        step = _tick_step(len(used), 20)
+        ax.set_xticks(x[::step])
+        ax.set_xticklabels([str(i + 1) for i in x[::step]])
+        ax.set_xlim(-0.6, len(used) - 0.4)
+        ax.set_ylim(0, k * 1.18)
+        ax.yaxis.set_major_locator(mpl.ticker.MaxNLocator(integer=True))
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Ports used")
+        ax.spines["left"].set_visible(False)
+        ax.yaxis.grid(True, color=GRID, linewidth=0.8)
+        ax.set_axisbelow(True)
+        avg = sum(used) / (len(used) * k) * 100
+        tocks = sum(item.tocks for item in sched)
+        _title(ax, title, f"dashed line = k = {k} ports, average {avg:.0f}% used, {len(used)} "
+               f"{'groups' if xlabel == 'Group' else 'sub-batches'}, {tocks} Tocks")
+    _save_or_show(fig, save_path, "port utilization chart", display)
+
+
+def _build_heatmap_case5_kport(cz_lim: "CZSchedulerLimited") -> tuple[np.ndarray, list[str]]:
+    """Matrix[qubit_row, tock] for Case 5: 0 idle, 1 CZ step 1, 2 CZ step 2."""
+    m = _build_heatmap_cz(cz_lim.G, [sb.edges for sb in cz_lim.scheduled_batches])
+    labels = [f"T{t + 1}" for t in range(m.shape[1])]
+    return m, labels
+
+
+def _build_heatmap_case4_kport(mpp_lim: "MPPSchedulerLimited") -> tuple[np.ndarray, list[str]]:
+    """Matrix[qubit_row, tock] for Case 4: 0 idle, 1 Z-neighbour, 2 X-measured."""
+    row = {n: i for i, n in enumerate(mpp_lim.G.nodes)}
+    m = np.zeros((len(row), len(mpp_lim.scheduled_groups)), dtype=np.int8)
+    for gi, sg in enumerate(mpp_lim.scheduled_groups):
+        for meas in sg.measurements:
+            m[row[meas["id"]], gi] = 2
+            for nb in meas["neighbors"]:
+                if m[row[nb], gi] == 0:
+                    m[row[nb], gi] = 1
+    return m, [f"T{g + 1}" for g in range(m.shape[1])]
+
+
+def show_heatmaps_limited(
+    mpp_lim: "MPPSchedulerLimited | None" = None,
+    cz_lim:  "CZSchedulerLimited | None" = None,
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """Schedule heatmaps for Cases 4 and/or 5 (k-port switch)."""
+    panels = []
+    if mpp_lim is not None and mpp_lim.scheduled_groups:
+        m, xl = _build_heatmap_case4_kport(mpp_lim)
+        panels.append((m, xl, mpp_lim.G, f"Case 4: MPP, {mpp_lim.switch.k} ports",
+                       ListedColormap([IDLE, MPP_MID, MPP]), _mpp_legend(), 0,
+                       f"{m.shape[1]} Tocks"))
+    if cz_lim is not None and cz_lim.scheduled_batches:
+        m, xl = _build_heatmap_case5_kport(cz_lim)
+        panels.append((m, xl, cz_lim.G, f"Case 5: CZ, {cz_lim.switch.k} ports",
+                       ListedColormap([IDLE, CZ_MID, CZ]), _cz_legend(), 2,
+                       f"{m.shape[1]} Tocks, {len(cz_lim.scheduled_batches)} sub-batches"))
+    if not panels:
+        return
+    widths = [max(p[0].shape[1], 3) for p in panels]
+    n_q = max(p[0].shape[0] for p in panels)
+    height = max(4.2, min(n_q * 0.24 + 2.2, 18))
+    fig, axes = plt.subplots(1, len(panels), figsize=(max(10, sum(widths) * 0.32 + 4 * len(panels)), height),
+                             layout="constrained", squeeze=False,
+                             gridspec_kw={"width_ratios": widths})
+    for ax, (m, xl, G, title, cmap, legend, every, sub) in zip(axes[0], panels):
+        plot_heatmap(m, xl, [f"Q{v}" for v in G.nodes], title, cmap, legend, ax,
+                     vline_every=every, subtitle=sub)
+    _save_or_show(fig, save_path, "k-port heatmap", display)
+
+
+# k-port switch: per-Tock wiring diagrams (Cases 4 and 5)
+
+def _draw_switch_diagram(
+    ax: plt.Axes,
+    *,
+    nodes_list:    list,
+    data_fill:     dict,
+    sw_data_nodes: list[list],
+    sw_anc_count:  list[int],
+    k:             int,
+    family:        str,
+) -> None:
+    """
+    Data QPUs (top row) wired through k-port switch(es) (middle) to the
+    ancilla QPUs in use (bottom row).
+    """
+    strong = _FAMILY[family]["strong"]
+    mid    = _FAMILY[family]["mid"]
+    n_q  = len(nodes_list)
+    n_sw = len(sw_data_nodes)
+    port_sp, port_w = 0.62, 0.46
+    sw_w = k * port_sp + 0.3
+    sw_gap = 0.9
+    total_sw = n_sw * sw_w + (n_sw - 1) * sw_gap
+    width = max(n_q, total_sw, sum(sw_anc_count))
+    data_y, sw_y, anc_y = 3.6, 1.8, 0.0
+
+    ax.set_xlim(-2.2, width + 0.3)
+    ax.set_ylim(anc_y - 0.6, data_y + 0.6)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    for y, name in [(data_y, "Data"), (sw_y, "Switch"), (anc_y, "Ancilla")]:
+        ax.text(-0.35, y, name, ha="right", va="center", fontsize=_FS_SMALL, color=INK_2)
+
+    x0 = (width - n_q) / 2
+    data_x = {}
+    for i, v in enumerate(nodes_list):
+        fill = data_fill.get(v)
+        ax.add_patch(FancyBboxPatch(
+            (x0 + i + 0.06, data_y - 0.39), 0.88, 0.78,
+            boxstyle="round,pad=0,rounding_size=0.12",
+            facecolor=fill or IDLE, edgecolor=fill or IDLE_EDGE, linewidth=0.8, zorder=2))
+        if n_q <= 48:
+            ax.text(x0 + i + 0.5, data_y, f"Q{v}", ha="center", va="center",
+                    fontsize=_FS_TINY if n_q <= 24 else 5,
+                    fontweight="bold" if fill else "normal",
+                    color=_text_on(fill) if fill else IDLE_TEXT, zorder=3)
+        data_x[v] = x0 + i + 0.5
+
+    total_anc = sum(sw_anc_count)
+    a0 = (width - total_anc) / 2
+    anc_x = [a0 + j + 0.5 for j in range(total_anc)]
+    for j, ax_x in enumerate(anc_x):
+        ax.add_patch(FancyBboxPatch(
+            (ax_x - 0.44, anc_y - 0.39), 0.88, 0.78,
+            boxstyle="round,pad=0,rounding_size=0.12",
+            facecolor=_FAMILY[family]["dark"], edgecolor=_FAMILY[family]["dark"],
+            linewidth=0.8, zorder=2))
+        ax.text(ax_x, anc_y, f"A{j}", ha="center", va="center", fontsize=_FS_TINY,
+                fontweight="bold", color="white", zorder=3)
+
+    s0 = (width - total_sw) / 2
+    anc_j = 0
+    for si in range(n_sw):
+        bx = s0 + si * (sw_w + sw_gap)
+        ax.add_patch(FancyBboxPatch(
+            (bx, sw_y - 0.42), sw_w, 0.84, boxstyle="round,pad=0,rounding_size=0.18",
+            facecolor=BAND, edgecolor=RULE, linewidth=1.0, zorder=1))
+        data_nodes = sorted(sw_data_nodes[si], key=nodes_list.index)
+        n_anc = sw_anc_count[si]
+        for p in range(k):
+            px = bx + 0.15 + p * port_sp
+            if p < len(data_nodes):
+                fc = data_fill.get(data_nodes[p], mid)
+            elif p < len(data_nodes) + n_anc:
+                fc = _FAMILY[family]["dark"]
+            else:
+                fc = SURFACE
+            ax.add_patch(plt.Rectangle((px, sw_y - 0.2), port_w, 0.4, facecolor=fc,
+                                       edgecolor=fc if fc != SURFACE else IDLE_EDGE,
+                                       linewidth=0.8, zorder=2))
+        for p, v in enumerate(data_nodes):
+            if v in data_x:
+                ax.plot([data_x[v], bx + 0.15 + p * port_sp + port_w / 2],
+                        [data_y - 0.39, sw_y + 0.2], color=mid, linewidth=1.2, zorder=0)
+        for a in range(n_anc):
+            px = bx + 0.15 + (len(data_nodes) + a) * port_sp + port_w / 2
+            ax.plot([px, anc_x[anc_j]], [sw_y - 0.2, anc_y + 0.39], color=strong,
+                    linewidth=1.2, zorder=0)
+            anc_j += 1
+
+
+def show_qubit_occupancy_case4(
+    mpp_lim:   "MPPSchedulerLimited",
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """One row per Tock for Case 4: MPP measurements wired through the switch."""
+    groups = mpp_lim.scheduled_groups
+    if not groups:
+        return
+    G = mpp_lim.G
+    nodes = list(G.nodes)
+    pos = _positions(G)
+    k, n_sw = mpp_lim.switch.k, mpp_lim.switch.n_switches
+    fig, axes = _per_tock_figure(len(groups), max(len(nodes), k + 2), right_ratio=2.0)
+    _occupancy_legend(fig, [_swatch(MPP, "X measured"), _swatch(MPP_MID, "Z neighbour"),
+                            _swatch(MPP_DARK, "ancilla"), _swatch(IDLE, "idle", IDLE_EDGE)])
+    for gi, sg in enumerate(groups):
+        ax_g, ax_s = axes[gi]
+        measured = {m["id"] for m in sg.measurements}
+        nbrs = {nb for m in sg.measurements for nb in m["neighbors"]} - measured
+        fill = {**{v: MPP_MID for v in nbrs}, **{v: MPP for v in measured}}
+        edges = {(min(m["id"], nb), max(m["id"], nb)): MPP
+                 for m in sg.measurements for nb in m["neighbors"]}
+        _draw_graph(ax_g, G, pos, fill, edges)
+        _title(ax_g, f"Tock {gi + 1}", _operators(sg.measurements))
+
+        if sg.switch_gens and len(sg.switch_gens) == n_sw:
+            sw_nodes = [list(sg.switch_support[si]) for si in range(n_sw)]
+            sw_anc = [len(sg.switch_gens[si]) for si in range(n_sw)]
+        else:
+            sw_nodes = [list(measured | nbrs)] + [[] for _ in range(n_sw - 1)]
+            sw_anc = [len(sg.measurements)] + [0] * (n_sw - 1)
+        _draw_switch_diagram(ax_s, nodes_list=nodes, data_fill=fill,
+                             sw_data_nodes=sw_nodes, sw_anc_count=sw_anc, k=k,
+                             family="mpp")
+        _title(ax_s, "Switch wiring", f"{sg.n_ports_used} of {k * n_sw} ports used")
+    _save_or_show(fig, save_path, "Case 4 occupancy", display)
+
+
+def show_qubit_occupancy_case5(
+    cz_lim:    "CZSchedulerLimited",
+    save_path: str | None = None,
+    display:   bool = False,
+) -> None:
+    """One row per Tock for Case 5: CZ steps wired through the switch."""
+    batches = cz_lim.scheduled_batches
+    if not batches:
+        return
+    G = cz_lim.G
+    nodes = list(G.nodes)
+    pos = _positions(G)
+    k, n_sw = cz_lim.switch.k, cz_lim.switch.n_switches
+    n_t = 2 * len(batches)
+    fig, axes = _per_tock_figure(n_t, max(len(nodes), k + 2), right_ratio=2.0)
+    _occupancy_legend(fig, [_swatch(CZ, "active this Tock"),
+                            _swatch(CZ_MID, "other end of the CZ"),
+                            _swatch(CZ_DARK, "ancilla"), _swatch(IDLE, "idle", IDLE_EDGE)])
+    for t in range(n_t):
+        ax_g, ax_s = axes[t]
+        b, step = divmod(t, 2)
+        sb = batches[b]
+        now   = {u if step == 0 else v for u, v in sb.edges}
+        other = {v if step == 0 else u for u, v in sb.edges}
+        fill = {**{v: CZ_MID for v in other}, **{v: CZ for v in now}}
+        _draw_graph(ax_g, G, pos, fill,
+                    {(min(u, v), max(u, v)): CZ for u, v in sb.edges})
+        _title(ax_g, f"Tock {t + 1}",
+               f"sub-batch {b + 1}, step {step + 1}: "
+               + (r"$Z_u \otimes Z_{anc}$" if step == 0 else r"$Z_v \otimes Z_{anc}$"))
+
+        per_sw = sb.switch_edges if (sb.switch_edges and len(sb.switch_edges) == n_sw) \
+            else [list(sb.edges)] + [[] for _ in range(n_sw - 1)]
+        sw_nodes = [[u if step == 0 else v for u, v in e] for e in per_sw]
+        sw_anc = [len(e) for e in per_sw]
+        _draw_switch_diagram(ax_s, nodes_list=nodes, data_fill={v: CZ for v in now},
+                             sw_data_nodes=sw_nodes, sw_anc_count=sw_anc, k=k,
+                             family="cz")
+        _title(ax_s, "Switch wiring",
+               f"{len(sb.edges)} CZ gate{'s' if len(sb.edges) != 1 else ''}, "
+               f"{sb.n_ports_used} of {k * n_sw} ports used")
+    _save_or_show(fig, save_path, "Case 5 occupancy", display)

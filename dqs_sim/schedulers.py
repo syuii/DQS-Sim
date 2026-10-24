@@ -35,28 +35,28 @@ import networkx as nx
 # Visual constants: edit here to restyle all plots at once
 
 _STYLE = {
-    # node colours
-    "node_mis":     "#81c784",  # green : MIS (free)
-    "node_measure": "#e57373",  # red   : to be measured
-    "node_neighbor":"#ffd54f",  # yellow: Z-neighbour (tock plots)
-    "node_idle":    "#f0f0f0",  # grey  : uninvolved
+    # node colours (same palette as dqs_sim.visualizer: blue = MPP, green = MIS)
+    "node_mis":     "#a5e0c9",  # green: MIS (free, starts in |+>)
+    "node_measure": "#86b6ef",  # blue: to be measured
+    "node_neighbor":"#cde2fb",  # light blue: Z-neighbour (tock plots)
+    "node_idle":    "#f3f2ef",  # warm grey: uninvolved
 
     # edges
-    "edge_active":  "#e57373",
-    "edge_inactive":"#cccccc",
+    "edge_active":  "#2a78d6",
+    "edge_inactive":"#dddcd7",
 
-    # tile colours (cycling, one per measurement in a Tock)
-    "tile_palette": ["#e57373", "#81c784", "#64b5f6", "#ffb74d",
-                     "#ba68c8", "#4db6ac", "#ff8a65", "#9575cd"],
+    # tile colours, one per measurement in a Tock (blue steps)
+    "tile_palette": ["#2a78d6", "#86b6ef", "#1c5cab", "#5598e7",
+                     "#104281", "#b7d3f6", "#256abf", "#3987e5"],
 
     # typography / layout
-    "font_size":    12,
-    "node_size":    700,
-    "title_size":   13,
+    "font_size":    11,
+    "node_size":    620,
+    "title_size":   12,
     "fig_bg":       "white",
     "edge_lw":      1.5,
-    "node_lw":      1.4,
-    "node_edge_c":  "#555555",
+    "node_lw":      1.2,
+    "node_edge_c":  "#c9c8c2",
 }
 
 # A single fixed layout seed so every graph view looks the same across plots.

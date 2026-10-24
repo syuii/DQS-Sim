@@ -97,11 +97,15 @@ class ResourceReport:
     n_switches:              int   | None = None
     n_groups_case4:          int   | None = None  # number of Tock groups
     tocks_case4:             int   | None = None  # = n_groups (1 Tock each)
+    peak_ancilla_ELUs_case4: int   | None = None  # max generators in one group
+    total_phys_qubits_case4: int   | None = None
     tock_ratio_c4_c1:        float | None = None
 
     # Case 5 (CZ + k-port switch): optional
     n_batches_case5:         int   | None = None  # number of sub-batches
     tocks_case5:             int   | None = None  # = 2 × n_batches
+    peak_ancilla_ELUs_case5: int   | None = None  # max CZ gates in one sub-batch
+    total_phys_qubits_case5: int   | None = None
     tock_ratio_c5_c2:        float | None = None
 
 
@@ -301,6 +305,8 @@ def compute_report(
     s4_ratio   = None
 
     s4_nsw     = None
+    s4_peak    = None
+    s4_phys    = None
 
     if mpp_limited is not None:
         s4_k      = mpp_limited.switch.k
@@ -308,11 +314,16 @@ def compute_report(
         s4_groups = len(mpp_limited.scheduled_groups)
         s4_tocks  = mpp_limited.n_tocks()
         s4_ratio  = s4_tocks / tocks_c1 if tocks_c1 > 0 else float("inf")
+        s4_peak   = max((len(g.measurements) for g in mpp_limited.scheduled_groups),
+                        default=0)
+        s4_phys   = (n + s4_peak) * phys
 
     # Case 5 (optional)
     s5_batches = None
     s5_tocks   = None
     s5_ratio   = None
+    s5_peak    = None
+    s5_phys    = None
 
     if cz_limited is not None:
         if s4_k is None:
@@ -322,6 +333,9 @@ def compute_report(
         s5_batches = len(cz_limited.scheduled_batches)
         s5_tocks   = cz_limited.n_tocks()
         s5_ratio   = s5_tocks / tocks_c2 if tocks_c2 > 0 else float("inf")
+        s5_peak    = max((len(b.edges) for b in cz_limited.scheduled_batches),
+                         default=0)
+        s5_phys    = (n + s5_peak) * phys
 
     return ResourceReport(
         graph_type               = graph_type,
@@ -357,8 +371,12 @@ def compute_report(
         n_groups_case4           = s4_groups,
         tocks_case4              = s4_tocks,
         tock_ratio_c4_c1         = s4_ratio,
+        peak_ancilla_ELUs_case4  = s4_peak,
+        total_phys_qubits_case4  = s4_phys,
         # Case 5
         n_batches_case5          = s5_batches,
         tocks_case5              = s5_tocks,
         tock_ratio_c5_c2         = s5_ratio,
+        peak_ancilla_ELUs_case5  = s5_peak,
+        total_phys_qubits_case5  = s5_phys,
     )
